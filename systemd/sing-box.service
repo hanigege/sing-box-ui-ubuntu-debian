@@ -1,0 +1,24 @@
+[Unit]
+Description=sing-box gateway service
+Documentation=https://github.com/hanigege/sing-box-ui-ubuntu-debian
+# TProxy 负责策略路由与 nft 规则，sing-box 必须在其之后启动，且随其停止一起收敛。
+After=network-online.target sing-box-tproxy.service
+Wants=network-online.target
+Requires=sing-box-tproxy.service
+
+[Service]
+Type=simple
+# systemd 版对齐 OpenRC start_pre：启动前先刷新运行配置（IP/网卡变化后避免沿用旧监听地址），再做 check，任一失败则拒绝启动。
+ExecStartPre=/usr/local/sbin/refresh-sing-box-runtime-config
+ExecStartPre=/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+Restart=on-failure
+RestartSec=5
+# 日志同时进 journal 和文件，兼容既有 /var/log/sing-box-gateway 体系与 logrotate copytruncate。
+StandardOutput=append:/var/log/sing-box-gateway/sing-box.log
+StandardError=append:/var/log/sing-box-gateway/sing-box.log
+LimitNOFILE=1048576
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

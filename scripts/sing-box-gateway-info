@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG="/etc/sing-box/config.json"
+TOKEN_FILE="/etc/sing-box/rule-ui/token"
+
+python3 - <<'PY'
+import json
+import socket
+import subprocess
+from pathlib import Path
+
+config_path = Path("/etc/sing-box/config.json")
+token_path = Path("/etc/sing-box/rule-ui/token")
+
+def default_lan_ip():
+    try:
+        out = subprocess.check_output(["ip", "-o", "-4", "route", "get", "1.1.1.1"], text=True)
+        parts = out.split()
+        if "src" in parts:
+            return parts[parts.index("src") + 1]
+    except Exception:
+        pass
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except Exception:
+        return ""
+
+config = {}
+if config_path.exists():
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+
+controller = config.get("experimental", {}).get("clash_api", {}).get("external_controller", "")
+lan_ip = controller.split(":", 1)[0] if ":" in controller else ""
+display_ip = default_lan_ip() if lan_ip in ("", "0.0.0.0", "::") else lan_ip
+token = token_path.read_text(encoding="utf-8").strip() if token_path.exists() else ""
+
+print("Sing-box Gateway")
+print("================")
+if display_ip:
+    print(f"Rule UI:        http://{display_ip}:9091/")
+else:
+    print("Rule UI:        http://<gateway-ip>:9091/")
+print(f"Rule UI token:  {token or '<missing>'}")
+print()
+print("Forgot the passwords? Run: sing-box-gateway-info")
+print("Service checks:")
+print("  systemctl status sing-box")
+print("  systemctl status sing-box-tproxy")
+print("  systemctl status singbox-rule-ui")
+print()
+print("IPv6 PPPoE/RouterOS note:")
+print("  If IPv6 pages partially load or Taobao orders spin, make the upstream router")
+print("  advertise the LAN RA MTU as the PPPoE actual MTU, usually 1492.")
+print("  On this Ubuntu/Debian host, verify immediately with: ip link set dev eth0 mtu 1492")
+print("  RouterOS: /ipv6/nd/set [find interface=bridge1] mtu=1492")
+PY

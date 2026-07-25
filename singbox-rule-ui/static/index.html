@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sing-box</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1 id="brandLink" role="button" tabindex="0">Sing-box</h1>
+          <p id="meta">Loading</p>
+          <footer id="status" class="status">Ready</footer>
+        </div>
+        <div class="actions">
+          <select id="langSelect" aria-label="Language">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+          <button id="saveBtn" type="button" data-i18n="save">Save</button>
+          <button id="logoutBtn" class="secondary-btn" type="button" data-i18n="logout">Logout</button>
+        </div>
+      </header>
+
+      <section id="login" class="panel hidden">
+        <h2 data-i18n="accessToken">Access Token</h2>
+        <div class="login-row">
+          <input id="tokenInput" type="password" autocomplete="current-password" data-i18n-placeholder="pasteToken" placeholder="Paste token" />
+          <button id="tokenBtn" type="button" data-i18n="unlock">Unlock</button>
+        </div>
+      </section>
+
+      <section id="app" class="workspace hidden">
+        <nav class="tabs" aria-label="Rule lists">
+          <button class="tab active" data-list="nodes" type="button"></button>
+          <button class="tab" data-list="runtime" type="button"></button>
+          <button class="tab" data-list="whitelist" type="button"></button>
+          <button class="tab" data-list="blacklist" type="button"></button>
+          <button class="tab" data-list="greylist" type="button"></button>
+          <button class="tab" data-list="ddns" type="button"></button>
+          <button class="tab" data-list="maintenance" type="button"></button>
+        </nav>
+
+        <section id="ruleEditor" class="panel editor">
+          <div class="editor-head">
+            <div>
+              <h2 id="listTitle">Whitelist</h2>
+              <p id="listSummary">0 entries</p>
+            </div>
+            <div class="tools">
+              <input id="searchInput" type="search" data-i18n-placeholder="filter" placeholder="Filter" />
+            </div>
+          </div>
+
+         <form id="addForm" class="add-row">
+           <select id="typeInput" aria-label="Match type">
+             <option value="domain_suffix"></option>
+             <option value="domain"></option>
+             <option value="domain_keyword"></option>
+             <option value="domain_regex"></option>
+             <option value="ip_cidr"></option>
+           </select>
+           <input id="valueInput" type="text" autocomplete="off" placeholder="example.com" />
+           <button type="submit" data-i18n="add">Add</button>
+         </form>
+          <!-- 批量编辑文本框：一行一个条目，格式 "类型前缀: 值"；不写前缀使用上方选中类型。支持直接粘贴域名列表。 -->
+         <textarea id="listTextarea" class="list-textarea"
+           placeholder="域名后缀: example.com&#10;完整域名: example.com&#10;关键词: keyword&#10;正则: ^pattern$&#10;IP/CIDR: 1.2.3.0/24&#10;也可以直接粘贴纯域名，会自动使用上方选中的类型"
+           spellcheck="false"></textarea>
+         <p class="textarea-hint">
+           每行一个条目，格式：<code>类型: 值</code>。
+           支持的类型：<code>domain_suffix</code>（域名后缀）、<code>domain</code>（完整域名）、<code>domain_keyword</code>（关键词）、<code>domain_regex</code>（正则）、<code>ip_cidr</code>（IP/CIDR）。
+           不写类型前缀则自动使用上方下拉框选中的类型。例如粘贴 <code>google.com</code> 默认添加为<code>域名后缀: google.com</code>。
+         </p>
+        <div id="rows" class="rows"></div>
+       </section>
+
+        <section id="nodeEditor" class="panel editor hidden">
+          <div class="editor-head">
+            <div>
+              <h2 id="nodeTitle">Nodes</h2>
+              <p id="nodeSummary">0 nodes</p>
+            </div>
+            <div class="tools">
+              <select id="proxyDefault" class="hidden" aria-label="Proxy default"></select>
+              <button id="refreshDelayBtn" class="secondary-btn" type="button" data-i18n="refreshDelay">Refresh delay</button>
+            </div>
+          </div>
+
+          <section class="compact-settings auto-settings" aria-label="Auto settings">
+            <div>
+              <h3 data-i18n="autoTitle">Auto</h3>
+              <p data-i18n="autoNote">Urltest selects a node by latency.</p>
+            </div>
+            <label class="wide-field">
+              <span data-i18n="autoUrl">Test URL</span>
+              <input id="autoUrl" type="url" autocomplete="off" placeholder="https://www.gstatic.com/generate_204" />
+            </label>
+            <label>
+              <span data-i18n="autoInterval">Interval</span>
+              <input id="autoInterval" type="text" autocomplete="off" placeholder="30s" />
+            </label>
+            <label class="switch-field">
+              <span data-i18n="autoFallbackProtect">Fallback protection</span>
+              <input id="autoFallbackEnabled" type="checkbox" />
+            </label>
+            <label id="autoFallbackDelayGroup" class="hidden">
+              <span data-i18n="autoFallbackMaxDelay">Max delay</span>
+              <input id="autoFallbackMaxDelay" type="text" placeholder="400ms" />
+            </label>
+            <label class="switch-field">
+              <span data-i18n="interruptConnections">Interrupt old connections</span>
+              <input id="interruptConnections" type="checkbox" />
+            </label>
+          </section>
+
+          <section class="compact-settings dns-settings" aria-label="Local DNS settings">
+            <div>
+              <h3 data-i18n="localDnsTitle">Local DNS</h3>
+            </div>
+            <label>
+              <span data-i18n="localDnsUpstream">Upstream</span>
+              <select id="localDnsSelect"></select>
+            </label>
+            <div id="customDnsFields" class="custom-dns-fields hidden">
+              <label>
+                <span data-i18n="customDnsServer">Server</span>
+                <input type="text" id="customDnsServer" value="223.5.5.5" placeholder="223.5.5.5" />
+              </label>
+              <label>
+                <span data-i18n="customDnsPort">Port</span>
+                <input type="number" id="customDnsPort" value="53" min="1" max="65535" />
+              </label>
+            </div>
+            <button id="refreshDnsDelayBtn" class="secondary-btn" type="button" data-i18n="refreshDnsDelay">Refresh DNS delay</button>
+            <p class="dns-note" data-i18n="localDnsNote">Choose one upstream for direct China domains. sing-box does not run these in parallel.</p>
+            <div id="dnsDelayRows" class="dns-delay-rows wide-field"></div>
+          </section>
+
+          <section class="compact-settings fakeip-settings" aria-label="FakeIP settings">
+            <div class="settings-intro">
+              <h3 data-i18n="fakeipTitle">FakeIP</h3>
+              <p data-i18n="fakeipNote">Match this range with the upstream router.</p>
+            </div>
+            <label class="range-field">
+              <span data-i18n="fakeipV4">IPv4 range</span>
+              <input id="fakeipV4" type="text" autocomplete="off" placeholder="28.0.0.0/8" />
+            </label>
+            <label class="range-field">
+              <span data-i18n="fakeipV6">IPv6 range</span>
+              <input id="fakeipV6" type="text" autocomplete="off" placeholder="2001:2::/64" />
+            </label>
+            <div class="policy-grid wide-field">
+              <label class="policy-option">
+                <span class="policy-option-head">
+                  <input id="fakeipIpv6Enabled" type="checkbox" checked />
+                  <strong data-i18n="fakeipIpv6Enabled">Enable IPv6 FakeIP / AAAA</strong>
+                </span>
+                <small data-i18n="fakeipIpv6Help">Return IPv6 FakeIP answers for matched domains when the upstream router sends the IPv6 FakeIP range back to sing-box.</small>
+              </label>
+              <label class="policy-option">
+                <span class="policy-option-head">
+                  <input id="telegramCaptureIps" type="checkbox" checked />
+                  <strong data-i18n="telegramCaptureIps">Proxy Telegram official IP ranges</strong>
+                </span>
+                <small data-i18n="telegramPolicyHelp">Telegram clients may connect to official IPs directly. This keeps those explicit service ranges in TProxy without capturing all public IP traffic.</small>
+              </label>
+            </div>
+          </section>
+
+          <section class="compact-settings socks5-settings" aria-label="SOCKS5 inbound">
+            <div>
+              <h3 data-i18n="socks5Title">SOCKS5</h3>
+              <p data-i18n="socks5Note">Enable a SOCKS5 inbound for LAN clients. Set port 0 to disable.</p>
+            </div>
+            <label>
+              <span data-i18n="socks5Port">Port</span>
+              <input id="socks5Port" type="number" min="0" max="65535" step="1" value="0" placeholder="1080" />
+            </label>
+          </section>
+
+          <form id="nodeForm" class="node-form">
+            <select id="nodeType" aria-label="Node type">
+              <option value="hysteria2">Hysteria2</option>
+              <option value="vless">VLESS Reality</option>
+            </select>
+            <select id="nodeTransportMode" aria-label="VLESS transport mode">
+              <option value="bbr">System BBR / TCP</option>
+              <option value="brutal">Brutal mux</option>
+            </select>
+            <input id="nodeTag" type="text" autocomplete="off" placeholder="tag" />
+            <input id="nodeServer" type="text" autocomplete="off" placeholder="server" />
+            <input id="nodePort" type="number" min="1" max="65535" placeholder="443" />
+            <input id="nodeSecret" type="text" autocomplete="off" placeholder="password / uuid" />
+            <input id="nodeSni" type="text" autocomplete="off" placeholder="tls server_name" />
+            <input id="nodeObfs" type="text" autocomplete="off" placeholder="obfs password" />
+            <input id="nodePublicKey" type="text" autocomplete="off" placeholder="reality public_key" />
+            <input id="nodeShortId" type="text" autocomplete="off" placeholder="short_id" />
+            <input id="nodeUp" type="number" min="1" placeholder="up Mbps" />
+            <input id="nodeDown" type="number" min="1" placeholder="down Mbps" />
+            <label class="checkline"><input id="nodeInsecure" type="checkbox" checked /> <span data-i18n="allowInsecure">Allow insecure TLS</span></label>
+            <button id="nodeSubmit" type="submit" data-i18n="addNode">Add node</button>
+            <button id="nodeCancel" class="secondary-btn hidden" type="button" data-i18n="cancelEdit">Cancel</button>
+          </form>
+
+          <div id="nodeRows" class="node-rows"></div>
+        </section>
+
+        <section id="maintenanceEditor" class="panel editor hidden">
+          <div class="editor-head">
+            <div>
+              <h2 id="maintenanceTitle">Maintenance</h2>
+              <p id="maintenanceSummary">Rule sets and TProxy</p>
+            </div>
+            <div class="tools">
+              <button id="refreshMaintenanceBtn" class="secondary-btn" type="button" data-i18n="refreshMaintenance">Refresh</button>
+              <button id="restartSingboxBtn" class="secondary-btn" type="button" data-i18n="restartSingbox">Restart sing-box</button>
+              <button id="restartTproxyBtn" class="secondary-btn" type="button" data-i18n="restartTproxy">Restart TProxy</button>
+              <button id="restartUiBtn" class="secondary-btn" type="button" data-i18n="restartUi">Restart UI</button>
+              <button id="syncTproxyBtn" class="secondary-btn" type="button" data-i18n="syncTproxy">Sync TProxy</button>
+              <button id="updateRulesBtn" type="button" data-i18n="updateRules">Update rules</button>
+            </div>
+          </div>
+          <section class="backup-panel" aria-label="Backup and restore">
+            <div>
+              <h3 data-i18n="backupTitle">Backup</h3>
+              <p data-i18n="backupNote">Export or restore the UI-managed configuration.</p>
+            </div>
+            <div class="backup-actions">
+              <button id="exportBackupBtn" class="secondary-btn" type="button" data-i18n="exportBackup">Export backup</button>
+              <button id="importBackupBtn" class="secondary-btn" type="button" data-i18n="importBackup">Import backup</button>
+              <input id="backupFileInput" class="hidden" type="file" accept="application/json,.json" />
+            </div>
+          </section>
+          <div id="maintenanceRows" class="maintenance-rows"></div>
+          <section class="telegram-cidr-panel" aria-label="Telegram CIDR">
+            <div class="telegram-cidr-head">
+              <div>
+                <h3 data-i18n="telegramCidrTitle">Telegram IP ranges</h3>
+                <p id="telegramCidrSummary" data-i18n="telegramCidrLoading">Loading Telegram CIDR status.</p>
+              </div>
+              <div class="telegram-cidr-actions">
+                <button id="updateTelegramCidrBtn" class="secondary-btn" type="button" data-i18n="updateTelegramCidr">Update and apply online</button>
+                <button id="saveTelegramCidrBtn" class="secondary-btn" type="button" data-i18n="saveTelegramCidr">Save manual list</button>
+              </div>
+            </div>
+            <textarea id="telegramCidrText" spellcheck="false" autocomplete="off" placeholder="91.108.4.0/22"></textarea>
+            <p class="maintenance-note" data-i18n="telegramCidrHelp">Use online update for normal maintenance. Manual edits are validated before replacing the active TProxy list.</p>
+          </section>
+        </section>
+
+        <section id="runtimeEditor" class="panel editor hidden">
+          <div class="editor-head">
+            <div>
+              <h2 id="runtimeTitle">Runtime</h2>
+              <p id="runtimeSummary">Connections, logs and active rules</p>
+            </div>
+            <div class="tools runtime-tools">
+              <select id="runtimeView" aria-label="Runtime view">
+                <option value="connections"></option>
+                <option value="logs"></option>
+                <option value="rules"></option>
+              </select>
+              <select id="runtimeLogLevel" class="hidden" aria-label="Runtime log level">
+                <option value="error">error</option>
+                <option value="warn">warning</option>
+                <option value="info">info</option>
+                <option value="debug">debug</option>
+              </select>
+            </div>
+          </div>
+          <div id="runtimeRows" class="runtime-rows"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js?v=20260617-telegram-timezone"></script>
+  </body>
+</html>

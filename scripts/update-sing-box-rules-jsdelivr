@@ -1,0 +1,427 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_DIR="${RULE_UPDATE_BASE_DIR:-/etc/sing-box/rules}"
+CONFIG="${RULE_UPDATE_CONFIG:-/etc/sing-box/config.json}"
+MANAGER_DIR="${RULE_UPDATE_MANAGER_DIR:-/etc/sing-box/manager}"
+TELEGRAM_CIDR_FILE="${RULE_UPDATE_TELEGRAM_CIDR_FILE:-$MANAGER_DIR/telegram-cidr.json}"
+SING_BOX="${RULE_UPDATE_SING_BOX:-${SING_BOX:-/usr/local/bin/sing-box}}"
+SERVICE="${RULE_UPDATE_SERVICE_NAME:-sing-box}"
+TPROXY_SERVICE="${RULE_UPDATE_TPROXY_SERVICE:-sing-box-tproxy}"
+RESTART_SERVICE="${RULE_UPDATE_RESTART:-1}"
+FORCE_UPDATE="${RULE_UPDATE_FORCE:-0}"
+LOCK_WAIT="${RULE_UPDATE_LOCK_WAIT:-0}"
+ONLY_TELEGRAM_CIDR="${RULE_UPDATE_ONLY_TELEGRAM_CIDR:-0}"
+LOCK_FILE="${RULE_UPDATE_LOCK_FILE:-/run/update-sing-box-rules-jsdelivr.lock}"
+# 部分维护环境会先调用脚本再创建 /run；锁目录缺失时应显式补齐，而不是在下载前异常退出。
+mkdir -p "$(dirname "$LOCK_FILE")"
+exec 9>"$LOCK_FILE"
+if [ "$LOCK_WAIT" = "0" ]; then
+  if ! flock -n 9; then
+    echo "ERROR: another rule update is already running" >&2
+    exit 75
+  fi
+else
+  # 安装阶段必须等已有规则更新结束；否则初装规则缺失会在 sing-box check 才暴露成难懂错误。
+  if ! flock -w "$LOCK_WAIT" 9; then
+    echo "ERROR: another rule update is still running after ${LOCK_WAIT}s" >&2
+    exit 1
+  fi
+fi
+
+TMP_DIR="$(mktemp -d)"
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+DEFAULT_RAW_MIRRORS=(
+  "https://ghproxy.net/https://raw.githubusercontent.com"
+  "https://raw.githubusercontent.com"
+  "https://gh-proxy.com/https://raw.githubusercontent.com"
+  "https://gh.llkk.cc/https://raw.githubusercontent.com"
+)
+DEFAULT_CDN_MIRRORS=(
+  "https://cdn.jsdelivr.net/gh"
+  "https://fastly.jsdelivr.net/gh"
+)
+IFS=" " read -r -a RAW_MIRRORS <<< "${RULE_UPDATE_RAW_MIRRORS:-${DEFAULT_RAW_MIRRORS[*]}}"
+IFS=" " read -r -a CDN_MIRRORS <<< "${RULE_UPDATE_CDN_MIRRORS:-${DEFAULT_CDN_MIRRORS[*]}}"
+IFS=" " read -r -a RULE_UPDATE_DNS_SERVERS <<< "${RULE_UPDATE_DNS_SERVERS:-223.5.5.5 1.1.1.1}"
+
+GEOSITE=(
+  # 只下载运行配置真实引用的规则集；未引用的应用规则会增加定时更新噪音和维护成本。
+  speedtest telegram geolocation-!cn
+  cn icloud@cn apple@cn geolocation-cn
+)
+
+GEOIP_REQUIRED=(cn telegram)
+LEGACY_UNUSED_GEOSITE=(
+  category-ai-chat-!cn youtube google github cloudflare netflix facebook instagram tiktok
+  jetbrains spotify disney hbo amazon adobe steam category-pt@!cn category-cryptocurrency
+)
+LEGACY_UNUSED_GEOIP=(netflix facebook)
+UPDATED_FILES=()
+BACKUP_DIR="$TMP_DIR/backup"
+NEW_DIR="$TMP_DIR/new"
+mkdir -p "$BACKUP_DIR" "$NEW_DIR"
+DEFAULT_TELEGRAM_CIDR_SOURCES=(
+  "https://ghproxy.net/https://core.telegram.org/resources/cidr.txt"
+  "https://ghproxy.net/https://raw.githubusercontent.com/fernvenue/telegram-cidr-list/master/CIDR.txt"
+  "https://core.telegram.org/resources/cidr.txt"
+  "https://raw.githubusercontent.com/fernvenue/telegram-cidr-list/master/CIDR.txt"
+)
+IFS=" " read -r -a TELEGRAM_CIDR_SOURCES <<< "${RULE_UPDATE_TELEGRAM_CIDR_SOURCES:-${DEFAULT_TELEGRAM_CIDR_SOURCES[*]}}"
+
+source_url() {
+  local mirror="$1" source="$2" subdir="$3" name="$4"
+  case "$source" in
+    metacubex)
+      if [[ "$mirror" == *raw.githubusercontent.com ]]; then
+        echo "$mirror/MetaCubeX/meta-rules-dat/sing/geo/${subdir}/${name}.srs"
+      else
+        echo "$mirror/MetaCubeX/meta-rules-dat@sing/geo/${subdir}/${name}.srs"
+      fi
+      ;;
+  esac
+}
+
+url_host() {
+  local url="$1"
+  url="${url#*://}"
+  echo "${url%%/*}"
+}
+
+resolve_host_ipv4() {
+  local host="$1" server answer
+  for server in "${RULE_UPDATE_DNS_SERVERS[@]}"; do
+    answer="$(python3 - "$server" "$host" <<'PY' 2>/dev/null || true
+import ipaddress
+import random
+import socket
+import sys
+
+server, host = sys.argv[1], sys.argv[2].rstrip(".")
+query_id = random.randrange(65536).to_bytes(2, "big")
+packet = query_id + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+for label in host.split("."):
+    raw = label.encode("ascii")
+    packet += bytes([len(raw)]) + raw
+packet += b"\x00\x00\x01\x00\x01"
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as dns_sock:
+    dns_sock.settimeout(3)
+    dns_sock.sendto(packet, (server, 53))
+    data, _ = dns_sock.recvfrom(512)
+if len(data) < 12 or data[:2] != query_id:
+    raise SystemExit(1)
+answer_count = int.from_bytes(data[6:8], "big")
+offset = 12
+while offset < len(data) and data[offset]:
+    offset += data[offset] + 1
+offset += 5
+for _ in range(answer_count):
+    if offset >= len(data):
+        break
+    if data[offset] & 0xC0 == 0xC0:
+        offset += 2
+    else:
+        while offset < len(data) and data[offset]:
+            offset += data[offset] + 1
+        offset += 1
+    if offset + 10 > len(data):
+        break
+    record_type = int.from_bytes(data[offset:offset + 2], "big")
+    record_class = int.from_bytes(data[offset + 2:offset + 4], "big")
+    rdlength = int.from_bytes(data[offset + 8:offset + 10], "big")
+    offset += 10
+    value = data[offset:offset + rdlength]
+    offset += rdlength
+    if record_type == 1 and record_class == 1 and rdlength == 4:
+        # 不依赖 dig/dnsutils，直接向外部 DNS 查询 A 记录，避免本机 FakeIP DNS 影响规则维护。
+        print(ipaddress.IPv4Address(value))
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+)"
+    if [ -n "$answer" ]; then
+      echo "$answer"
+      return 0
+    fi
+  done
+  return 1
+}
+
+curl_rule_file() {
+  local url="$1" output="$2" log="$3"
+  local host ip curl_flags
+  host="$(url_host "$url")"
+  ip="$(resolve_host_ipv4 "$host" || true)"
+  curl_flags=(-4 -fsSL --connect-timeout "${RULE_UPDATE_CONNECT_TIMEOUT:-2}" --max-time "${RULE_UPDATE_MAX_TIME:-8}")
+  if [ -n "$ip" ]; then
+    # 规则更新在宿主机执行，必须绕开本机 FakeIP DNS，避免 raw/scg 被解析成 28.x 后直连超时。
+    curl_flags+=(--resolve "${host}:443:${ip}")
+  fi
+  curl "${curl_flags[@]}" "$url" -o "$output" 2>"$log"
+}
+
+update_telegram_cidr_file() {
+  local source output log host ip curl_flags
+  if [ "${#TELEGRAM_CIDR_SOURCES[@]}" -eq 0 ]; then
+    echo "optional telegram cidr list update disabled: no sources configured"
+    return 0
+  fi
+  for source in "${TELEGRAM_CIDR_SOURCES[@]}"; do
+    output="$TMP_DIR/telegram-cidr.txt"
+    log="$TMP_DIR/telegram-cidr.log"
+    host="$(url_host "$source")"
+    ip="$(resolve_host_ipv4 "$host" || true)"
+    curl_flags=(-4 -fsSL --connect-timeout "${RULE_UPDATE_TELEGRAM_CONNECT_TIMEOUT:-2}" --max-time "${RULE_UPDATE_TELEGRAM_MAX_TIME:-8}")
+    if [ -n "$ip" ]; then
+      # Telegram CIDR 影响 TProxy 捕获范围；下载同样绕开本机 FakeIP DNS，校验通过才覆盖旧列表。
+      curl_flags+=(--resolve "${host}:443:${ip}")
+    fi
+    if curl "${curl_flags[@]}" "$source" -o "$output" 2>"$log"; then
+      python3 - "$output" "$TELEGRAM_CIDR_FILE" "$source" <<'PY'
+import ipaddress
+import json
+import sys
+import time
+from pathlib import Path
+
+source_path, target_path, source = sys.argv[1:]
+items = []
+for raw in Path(source_path).read_text(encoding="utf-8").splitlines():
+    line = raw.split("#", 1)[0].strip().strip("'\"")
+    if not line:
+        continue
+    if line.startswith("- "):
+        line = line[2:].strip().strip("'\"")
+    if "," in line:
+        parts = [part.strip().strip("'\"") for part in line.split(",")]
+        line = next((part for part in parts if "/" in part), line)
+    items.append(ipaddress.ip_network(line, strict=False))
+collapsed = []
+for version in (4, 6):
+    collapsed.extend(ipaddress.collapse_addresses([item for item in items if item.version == version]))
+collapsed = sorted(collapsed, key=lambda item: (item.version, int(item.network_address), item.prefixlen))
+if not any(item.version == 4 for item in collapsed) or not any(item.version == 6 for item in collapsed):
+    raise SystemExit("telegram cidr list must include IPv4 and IPv6 ranges")
+target = Path(target_path)
+target.parent.mkdir(parents=True, exist_ok=True)
+updated_at_unix = int(time.time())
+target.write_text(json.dumps({
+    "source": source,
+    "updatedAt": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(updated_at_unix)),
+    "updatedAtUnix": updated_at_unix,
+    "cidrs": [str(item) for item in collapsed],
+}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+      echo "updated optional telegram cidr list from $source"
+      if systemctl is-active "$TPROXY_SERVICE" >/dev/null 2>&1; then
+        systemctl restart "$TPROXY_SERVICE" >/dev/null 2>&1 || echo "WARN: TProxy restart failed after Telegram CIDR update; UI sync can retry" >&2
+      fi
+      return 0
+    fi
+    echo "optional telegram cidr source unavailable: $source" >&2
+  done
+  if [ -s "$TELEGRAM_CIDR_FILE" ]; then
+    echo "kept optional telegram cidr list cache"
+    return 0
+  fi
+  echo "optional telegram cidr list unavailable; built-in UI fallback will be used" >&2
+  return 0
+}
+
+if [ "$ONLY_TELEGRAM_CIDR" = "1" ]; then
+  # UI 的 Telegram IP 网段按钮只影响 TProxy 放行范围；不要顺带下载 geosite/geoip，
+  # 否则一个小文件更新会被镜像探测和 sing-box 重启链路拖慢。
+  update_telegram_cidr_file
+  exit 0
+fi
+
+required_files_present() {
+  local name
+  for name in "${GEOSITE[@]}"; do
+    [ -s "$BASE_DIR/geosite/$name.srs" ] || return 1
+  done
+  for name in "${GEOIP_REQUIRED[@]}"; do
+    [ -s "$BASE_DIR/geoip/$name.srs" ] || return 1
+  done
+  return 0
+}
+
+SELECTED_MIRRORS=()
+select_mirrors() {
+  local mirror url probe="$TMP_DIR/probe.srs"
+  SELECTED_MIRRORS=()
+  for mirror in "${RAW_MIRRORS[@]}" "${CDN_MIRRORS[@]}"; do
+    url="$(source_url "$mirror" "metacubex" "geosite" "cn")"
+    if curl_rule_file "$url" "$probe" "$TMP_DIR/probe.log" \
+      && [ -s "$probe" ] && [ "$(wc -c < "$probe")" -gt 16 ]; then
+      SELECTED_MIRRORS+=("$mirror")
+      echo "rule mirror available: $mirror"
+    else
+      echo "rule mirror skipped: $mirror" >&2
+    fi
+    rm -f "$probe"
+  done
+  if [ "${#SELECTED_MIRRORS[@]}" -eq 0 ]; then
+    return 1
+  fi
+  return 0
+}
+
+fetch_one() {
+  local subdir="$1" name="$2" required="${3:-1}"
+  local tmp="$NEW_DIR/${subdir}-${name}.srs"
+  local current="$BASE_DIR/$subdir/${name}.srs"
+  local mirror source url
+  mkdir -p "$NEW_DIR" "$BASE_DIR/$subdir"
+  if [ "$required" = "0" ] && [ ! -s "$current" ]; then
+    echo "optional ${subdir}/${name}.srs unavailable; skipped safely"
+    return 0
+  fi
+  for mirror in "${SELECTED_MIRRORS[@]}"; do
+    for source in "metacubex"; do
+      url="$(source_url "$mirror" "$source" "$subdir" "$name")"
+      if curl_rule_file "$url" "$tmp" "$TMP_DIR/curl-${subdir}-${name}.log"; then
+        if [ -s "$tmp" ] && [ "$(wc -c < "$tmp")" -gt 16 ]; then
+          echo "downloaded ${subdir}/${name}.srs via ${source} ${mirror}"
+          UPDATED_FILES+=("$subdir/$name.srs:$tmp")
+          return 0
+        fi
+      fi
+    done
+  done
+  if [ -s "$current" ]; then
+    echo "WARN: update failed for ${subdir}/${name}.srs; keeping existing file" >&2
+    return 0
+  fi
+  if [ "$required" = "0" ]; then
+    echo "optional ${subdir}/${name}.srs unavailable; skipped safely"
+    return 0
+  fi
+  echo "ERROR: update failed for ${subdir}/${name}.srs and no existing file" >&2
+  return 1
+}
+
+restore_backups() {
+  local rel dst bak
+  for rel in "${RESTORE_FILES[@]:-}"; do
+    dst="$BASE_DIR/$rel"
+    bak="$BACKUP_DIR/$rel"
+    if [ -f "$bak" ]; then
+      install -m 0644 "$bak" "$dst"
+    else
+      rm -f "$dst"
+    fi
+  done
+}
+
+restart_sing_box_safely() {
+  # systemd 下先清 failed 状态再重启，避免 start-limit 挡住回滚后的再次拉起；坚持先 check、再重启、失败回滚旧规则。
+  systemctl reset-failed "$SERVICE" >/dev/null 2>&1 || true
+  systemctl restart "$SERVICE"
+  systemctl is-active "$SERVICE" >/dev/null 2>&1
+}
+
+backup_existing_rule() {
+  local rel="$1" dst="$BASE_DIR/$rel"
+  mkdir -p "$(dirname "$BACKUP_DIR/$rel")"
+  if [ -f "$dst" ]; then
+    cp -a "$dst" "$BACKUP_DIR/$rel"
+  fi
+  RESTORE_FILES+=("$rel")
+}
+
+prune_legacy_unused_rules() {
+  local name rel path
+  for name in "${LEGACY_UNUSED_GEOSITE[@]}"; do
+    rel="geosite/$name.srs"
+    path="$BASE_DIR/$rel"
+    if [ -f "$path" ]; then
+      backup_existing_rule "$rel"
+      rm -f "$path"
+      echo "removed legacy unused $rel"
+    fi
+  done
+  for name in "${LEGACY_UNUSED_GEOIP[@]}"; do
+    rel="geoip/$name.srs"
+    path="$BASE_DIR/$rel"
+    if [ -f "$path" ]; then
+      backup_existing_rule "$rel"
+      rm -f "$path"
+      echo "removed legacy unused $rel"
+    fi
+  done
+}
+
+finish_checked_update() {
+  local restart_reason="${1:-sing-box rule sets updated}"
+  local restart="${2:-$RESTART_SERVICE}"
+  prune_legacy_unused_rules
+
+  if ! "$SING_BOX" check -c "$CONFIG"; then
+    echo "ERROR: sing-box config check failed after rule update; rolling back rule files" >&2
+    restore_backups
+    "$SING_BOX" check -c "$CONFIG" || true
+    exit 1
+  fi
+
+  if [ "$restart" = "0" ]; then
+    echo "$restart_reason and config checked. Service restart skipped."
+    exit 0
+  fi
+
+  if ! restart_sing_box_safely; then
+    echo "ERROR: sing-box restart failed after rule update; rolling back rule files" >&2
+    restore_backups
+    "$SING_BOX" check -c "$CONFIG" || true
+    restart_sing_box_safely || exit 1
+    exit 1
+  fi
+
+  systemctl is-active "$SERVICE" >/dev/null 2>&1
+  echo "$restart_reason and service restarted safely."
+  exit 0
+}
+
+fail=0
+if ! select_mirrors; then
+  if [ "$FORCE_UPDATE" != "1" ] && required_files_present; then
+    # 定时更新不能因为外部镜像慢而长时间阻塞；已有规则可用时保留现状，下次再试。
+    echo "WARN: no rule mirror passed quick probe; existing required rule files are present, skipped this update safely" >&2
+    echo "WARN: set RULE_UPDATE_FORCE=1, RULE_UPDATE_RAW_MIRRORS, or RULE_UPDATE_CDN_MIRRORS to force a retry" >&2
+    finish_checked_update "sing-box rule update skipped safely" "0"
+  fi
+  echo "WARN: no rule mirror passed quick probe; forcing configured mirrors because required rule files are missing" >&2
+  echo "WARN: system DNS was not changed; check /etc/resolv.conf, firewall, RULE_UPDATE_RAW_MIRRORS, or RULE_UPDATE_CDN_MIRRORS if downloads fail" >&2
+  SELECTED_MIRRORS=("${RAW_MIRRORS[@]}" "${CDN_MIRRORS[@]}")
+fi
+for name in "${GEOSITE[@]}"; do
+  fetch_one "geosite" "$name" 1 || fail=1
+done
+for name in "${GEOIP_REQUIRED[@]}"; do
+  fetch_one "geoip" "$name" 1 || fail=1
+done
+if [ "$fail" -ne 0 ]; then
+  exit "$fail"
+fi
+
+RESTORE_FILES=()
+for entry in "${UPDATED_FILES[@]}"; do
+  rel="${entry%%:*}"
+  src="${entry#*:}"
+  dst="$BASE_DIR/$rel"
+  mkdir -p "$(dirname "$BACKUP_DIR/$rel")" "$(dirname "$dst")"
+  if [ -f "$dst" ]; then
+    cp -a "$dst" "$BACKUP_DIR/$rel"
+  fi
+  install -m 0644 "$src" "$dst"
+  RESTORE_FILES+=("$rel")
+  echo "installed $rel"
+done
+
+update_telegram_cidr_file
+
+finish_checked_update "sing-box rule sets updated"

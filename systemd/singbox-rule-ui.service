@@ -1,0 +1,20 @@
+[Unit]
+Description=Sing-box custom rule web UI
+Documentation=https://github.com/hanigege/sing-box-ui-ubuntu-debian
+After=network-online.target sing-box.service
+Wants=network-online.target
+# UI 依赖 sing-box 提供的 Clash API，但不强制 Requires：sing-box 重启不应拖死 UI 请求（AGENTS.md 稳定性要求）。
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/singbox-rule-ui
+Environment=RULE_UI_HOST=0.0.0.0
+Environment=RULE_UI_PORT=9091
+ExecStart=/usr/bin/python3 /opt/singbox-rule-ui/app.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/sing-box-gateway/rule-ui.log
+StandardError=append:/var/log/sing-box-gateway/rule-ui.log
+
+[Install]
+WantedBy=multi-user.target

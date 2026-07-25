@@ -1,0 +1,24 @@
+[Unit]
+Description=sing-box TProxy policy routing and nftables rules
+Documentation=https://github.com/hanigege/sing-box-ui-ubuntu-debian
+After=network-online.target
+Wants=network-online.target
+# sing-box 依赖本单元先建立策略路由/nft 表，故本单元排在其前。
+Before=sing-box.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# IPv6 前缀和默认网卡可能变化；每次应用 nft 前都重新生成脚本（对齐 OpenRC start_pre）。
+ExecStartPre=/usr/local/sbin/refresh-sing-box-tproxy-setup
+ExecStart=/usr/local/sbin/sing-box-tproxy-setup
+# 服务停止时清理运行态 nft 表和策略路由（对齐 OpenRC stop_post），全部忽略错误避免残留阻断。
+ExecStopPost=-/usr/sbin/nft delete table inet singbox_tproxy
+ExecStopPost=-/usr/sbin/nft delete table inet singbox
+ExecStopPost=-/usr/sbin/ip rule del fwmark 1 table 100
+ExecStopPost=-/usr/sbin/ip -6 rule del fwmark 1 table 100
+ExecStopPost=-/usr/sbin/ip route flush table 100
+ExecStopPost=-/usr/sbin/ip -6 route flush table 100
+
+[Install]
+WantedBy=multi-user.target

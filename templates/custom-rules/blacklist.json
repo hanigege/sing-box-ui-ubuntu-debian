@@ -1,0 +1,56 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "domain": [
+        "maplocatesdksnapshot.d.meituan.net",
+        "msmp.abchina.com.cn",
+        "ntp.nasa.gov",
+        "pti.store.microsoft.com",
+        "route-stats.d.meituan.net",
+        "stun.l.google.com",
+        "trace-server.prod-clustered.bugs.firebat.prime-video.amazon.dev",
+        "xmbc.highrez.co.uk"
+      ],
+      "domain_suffix": [
+        "afdback.ppsimg.com",
+        "afdback.ptqy.gitv.tv",
+        "arpa",
+        "bbrouter",
+        "corp",
+        "ctc",
+        "dhcp",
+        "getcacheddhcpresultsforcurrentconfig",
+        "home",
+        "init.phpwind.net",
+        "internal",
+        "invalid",
+        "jddebug.com",
+        "jomoxc.com",
+        "jomoxd.com",
+        "jpg",
+        "jsqmt.qq.com",
+        "k8s",
+        "local",
+        "localdomain",
+        "localhost",
+        "m4a",
+        "mtvod-hw.meituan.net",
+        "openstacklocal",
+        "smogfly.cloud",
+        "stun.ideasip.com",
+        "svc",
+        "t-ring-fallbacks2.msedge.net",
+        "test",
+        "volcsirius.com",
+        "wifi"
+      ],
+      "domain_regex": [
+        "[^a-zA-Z0-9._-]",
+        "^.*.arpa$",
+        "^.*.lan$",
+        "^[^.]+$"
+      ]
+    }
+  ]
+}
