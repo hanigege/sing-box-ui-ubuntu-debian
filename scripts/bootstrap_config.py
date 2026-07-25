@@ -237,10 +237,57 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
     }
 
 
+def ensure_rule_templates():
+    # 首次安装预置黑白灰名单模板，让新装机即带常用规则，无需手动配置。
+    # 覆盖安装时保留用户已配置的规则，不覆盖；ddns 无模板，创建空规则集。
+    for name in ("whitelist", "blacklist", "greylist", "ddns"):
+        rule_path = RULE_DIR / f"{name}.json"
+        if rule_path.is_file():
+            continue
+        preset_path = PRESET_RULES_DIR / f"{name}.json"
+        if preset_path.is_file():
+            write_json(rule_path, json.loads(preset_path.read_text(encoding="utf-8")))
+        else:
+            write_json(rule_path, empty_rule_set())
+
+
+def existing_install_detected():
+    # 覆盖安装判定：manager 数据齐全即认为是已配置过的网关。
+    # 此时绝不能重新生成 nodes/groups/base/token/secret——那会把用户真实节点
+    # 抹成模板占位节点、让 UI token 失效(违反"sing-box 不死"第一铁律)。
+    return BASE_CONFIG_PATH.is_file() and NODES_PATH.is_file() and GROUPS_PATH.is_file()
+
+
+def rebootstrap_existing():
+    # 覆盖安装路径：保留全部用户数据，只补缺失的规则模板和 token，
+    # 然后用现有 nodes/groups 重新渲染 config.json(经 app.render_config，
+    # 与 UI 保存走同一条渲染链)。渲染失败时保留现有 config.json 不动。
+    ensure_rule_templates()
+    token_path = CONFIG_DIR / "rule-ui" / "token"
+    if not token_path.is_file():
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
+        token_path.chmod(0o600)
+    import sys
+    sys.path.insert(0, "/opt/singbox-rule-ui")
+    try:
+        from app import render_config
+        nodes = json.loads(NODES_PATH.read_text(encoding="utf-8"))
+        groups = json.loads(GROUPS_PATH.read_text(encoding="utf-8"))
+        write_json(CONFIG_PATH, render_config(nodes=nodes, groups=groups, rule_dir=RULE_DIR))
+        print("Existing installation detected: user nodes/groups/base/token preserved; config.json re-rendered.")
+    except Exception as exc:  # noqa: BLE001
+        # 现有 config.json 保持原样仍可启动；渲染问题交给 UI/refresh 链路后续处理。
+        print(f"WARN: keep existing config.json untouched (re-render skipped: {exc})")
+
+
 def main():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     MANAGER_DIR.mkdir(parents=True, exist_ok=True)
     RULE_DIR.mkdir(parents=True, exist_ok=True)
+    if existing_install_detected():
+        rebootstrap_existing()
+        return
     # 一键安装不做任何命令行交互：先用可启动的简单配置落地，节点和高级参数交给 UI 修改。
     lan_ip = default_lan_ip()
     fake4 = DEFAULT_FAKE4
@@ -269,17 +316,7 @@ def main():
         "dns": {"local": "dnspod"},
         "ddns": {"dns": "local"},
     }
-    # 首次安装预置黑白灰名单模板，让新装机即带常用规则，无需手动配置。
-    # 覆盖安装时保留用户已配置的规则，不覆盖；ddns 无模板，创建空规则集。
-    for name in ("whitelist", "blacklist", "greylist", "ddns"):
-        rule_path = RULE_DIR / f"{name}.json"
-        if rule_path.is_file():
-            continue
-        preset_path = PRESET_RULES_DIR / f"{name}.json"
-        if preset_path.is_file():
-            write_json(rule_path, json.loads(preset_path.read_text(encoding="utf-8")))
-        else:
-            write_json(rule_path, empty_rule_set())
+    ensure_rule_templates()
     write_json(BASE_CONFIG_PATH, base)
     write_json(NODES_PATH, nodes)
     write_json(GROUPS_PATH, groups)
