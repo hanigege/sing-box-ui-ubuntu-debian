@@ -819,6 +819,10 @@ async function load() {
     setDirty(false);
     showApp();
     render();
+    // 重新登录时 logout() 已清空 maintenance/runtime 缓存；若当前停留在这两个 tab，
+    // render() 只会画出空数据(网卡 MTU 未知等)。与 tab 切换逻辑对齐，登录后按当前页补拉。
+    if (active === "maintenance") refreshMaintenance().catch(() => {});
+    if (active === "runtime") refreshRuntime();
     setStatus(t("loaded"), "ok");
     refreshDnsDelays({ silent: true }).catch(() => {});
   } catch (error) {
