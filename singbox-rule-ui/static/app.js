@@ -143,6 +143,13 @@ const translations = {
     maintenanceNote: "Rule-set updates and TProxy status",
     backupTitle: "Backup and restore",
     backupNote: "Export or restore the UI-managed rules, nodes, and routing settings.",
+    changeTokenTitle: "Change access token",
+    changeTokenNote: "Set a custom login token (at least 6 characters, no spaces).",
+    changeToken: "Change token",
+    newTokenPlaceholder: "New token",
+    changingToken: "Changing...",
+    tokenChanged: "Access token updated",
+    tokenTooShort: "Token must be at least 6 characters",
     maintenanceOverview: "Maintenance overview",
     configHealthTitle: "Config health",
     configHealthStatus: "Config health",
@@ -447,6 +454,13 @@ const translations = {
     maintenanceNote: "规则集更新与 TProxy 状态",
     backupTitle: "备份与恢复",
     backupNote: "导出或恢复 UI 管理的规则、节点和分流设置。",
+    changeTokenTitle: "修改访问密码",
+    changeTokenNote: "设置自定义登录密码（至少 6 位，不含空格）。",
+    changeToken: "修改密码",
+    newTokenPlaceholder: "新密码",
+    changingToken: "修改中...",
+    tokenChanged: "访问密码已更新",
+    tokenTooShort: "密码至少需要 6 位",
     maintenanceOverview: "维护概览",
     configHealthTitle: "配置健康",
     configHealthStatus: "配置健康",
@@ -667,6 +681,7 @@ function updateButtons() {
   $("syncTproxyBtn").disabled = busy;
   $("exportBackupBtn").disabled = busy;
   $("importBackupBtn").disabled = busy;
+  $("changeTokenBtn").disabled = busy;
   $("updateRulesBtn").disabled = busy;
   $("updateTelegramCidrBtn").disabled = busy;
   $("saveTelegramCidrBtn").disabled = busy;
@@ -1851,6 +1866,33 @@ function chooseBackupFile() {
   $("backupFileInput").click();
 }
 
+async function changeAccessToken() {
+  const newToken = $("newTokenInput").value.trim();
+  if (newToken.length < 6) {
+    setStatus(t("tokenTooShort"), "bad");
+    return;
+  }
+  setBusy(true);
+  pulseActionButton("changeTokenBtn", "changingToken");
+  try {
+    const result = await api("/api/token/change", {
+      method: "POST",
+      body: JSON.stringify({ token: newToken }),
+    });
+    // 后端已落盘新 token；立即同步内存与 localStorage，否则下一个请求就会 401。
+    token = result.token;
+    localStorage.setItem("ruleUiToken", token);
+    $("newTokenInput").value = "";
+    finishActionButton("changeTokenBtn", "actionDone", "done", "changeToken");
+    setStatus(t("tokenChanged"), "ok");
+  } catch (error) {
+    finishActionButton("changeTokenBtn", "actionFailed", "failed", "changeToken");
+    setStatus(error.message, "bad");
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function importBackupFromFile(event) {
   const file = event.target.files && event.target.files[0];
   event.target.value = "";
@@ -2812,6 +2854,13 @@ $("syncTproxyBtn").addEventListener("click", syncTproxy);
 $("exportBackupBtn").addEventListener("click", exportBackup);
 $("importBackupBtn").addEventListener("click", chooseBackupFile);
 $("backupFileInput").addEventListener("change", importBackupFromFile);
+$("changeTokenBtn").addEventListener("click", changeAccessToken);
+$("newTokenInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    changeAccessToken();
+  }
+});
 $("updateRulesBtn").addEventListener("click", updateRuleSets);
 $("updateTelegramCidrBtn").addEventListener("click", updateTelegramCidr);
 $("saveTelegramCidrBtn").addEventListener("click", saveTelegramCidr);

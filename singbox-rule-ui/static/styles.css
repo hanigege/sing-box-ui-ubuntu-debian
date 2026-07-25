@@ -1207,6 +1207,12 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+/* 修改访问密码输入框：跟随备份面板按钮排布，限制宽度避免撑破小屏布局 */
+.backup-actions input[type="password"] {
+  width: 200px;
+  max-width: 100%;
+}
+
 .rule-schedule-panel {
   display: grid;
   grid-column: 1 / -1;

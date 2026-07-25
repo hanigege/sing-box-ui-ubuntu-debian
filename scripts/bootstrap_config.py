@@ -251,6 +251,23 @@ def ensure_rule_templates():
             write_json(rule_path, empty_rule_set())
 
 
+def initial_ui_token():
+    # 安装时可用 RULE_UI_TOKEN 环境变量指定自定义 UI 密码(>=6 位、无空白)，
+    # 符合"curl | sh 不交互、参数走环境变量"的安装约定；不合规时回退随机生成并告警。
+    custom = os.environ.get("RULE_UI_TOKEN", "").strip()
+    if custom:
+        if len(custom) >= 6 and not any(ch.isspace() for ch in custom):
+            return custom
+        print("WARN: RULE_UI_TOKEN ignored (must be >=6 chars without whitespace); generated a random token instead.")
+    return secrets.token_urlsafe(32)
+
+
+def write_ui_token(token_path):
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(initial_ui_token() + "\n", encoding="utf-8")
+    token_path.chmod(0o600)
+
+
 def existing_install_detected():
     # 覆盖安装判定：manager 数据齐全即认为是已配置过的网关。
     # 此时绝不能重新生成 nodes/groups/base/token/secret——那会把用户真实节点
@@ -265,9 +282,7 @@ def rebootstrap_existing():
     ensure_rule_templates()
     token_path = CONFIG_DIR / "rule-ui" / "token"
     if not token_path.is_file():
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
-        token_path.chmod(0o600)
+        write_ui_token(token_path)
     import sys
     sys.path.insert(0, "/opt/singbox-rule-ui")
     try:
@@ -321,9 +336,7 @@ def main():
     write_json(NODES_PATH, nodes)
     write_json(GROUPS_PATH, groups)
     token_path = CONFIG_DIR / "rule-ui" / "token"
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
-    token_path.chmod(0o600)
+    write_ui_token(token_path)
     import sys
     sys.path.insert(0, "/opt/singbox-rule-ui")
     from app import render_config

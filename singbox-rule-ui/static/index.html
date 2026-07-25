@@ -234,6 +234,16 @@
               <input id="backupFileInput" class="hidden" type="file" accept="application/json,.json" />
             </div>
           </section>
+          <section class="backup-panel" aria-label="Change access token">
+            <div>
+              <h3 data-i18n="changeTokenTitle">Change access token</h3>
+              <p data-i18n="changeTokenNote">Set a custom login token (at least 6 characters, no spaces).</p>
+            </div>
+            <div class="backup-actions">
+              <input id="newTokenInput" type="password" autocomplete="new-password" data-i18n-placeholder="newTokenPlaceholder" placeholder="New token" />
+              <button id="changeTokenBtn" class="secondary-btn" type="button" data-i18n="changeToken">Change token</button>
+            </div>
+          </section>
           <div id="maintenanceRows" class="maintenance-rows"></div>
           <section class="telegram-cidr-panel" aria-label="Telegram CIDR">
             <div class="telegram-cidr-head">
@@ -275,6 +285,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260617-telegram-timezone"></script>
+    <script src="/app.js?v=20260725-change-token"></script>
   </body>
 </html>

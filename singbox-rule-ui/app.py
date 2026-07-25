@@ -180,6 +180,22 @@ def get_token():
     return token
 
 
+def set_token(new_token):
+    # 用户自定义访问密码：内网自用场景放宽到 >=6 位，仍禁止空白字符防止复制粘贴踩坑。
+    new_token = str(new_token or "").strip()
+    if len(new_token) < 6:
+        raise ValueError("Token must be at least 6 characters")
+    if any(ch.isspace() for ch in new_token):
+        raise ValueError("Token must not contain whitespace")
+    ensure_dirs()
+    # 先写临时文件再原子 rename，避免写一半掉电导致 token 文件损坏、UI 永久锁死。
+    tmp_path = TOKEN_FILE.with_name(TOKEN_FILE.name + ".tmp")
+    tmp_path.write_text(new_token + "\n", encoding="utf-8")
+    tmp_path.chmod(0o600)
+    tmp_path.replace(TOKEN_FILE)
+    return new_token
+
+
 def empty_rule_set():
     return {"version": 3, "rules": []}
 
@@ -3936,6 +3952,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = set_log_level(level)
                 status = 200 if result["ok"] else 422 if result.get("check", {}).get("code") != 0 else 500
                 self.send_json(result, status)
+                return
+            if parsed.path == "/api/token/change":
+                # 修改 UI 访问密码：do_POST 顶部已做 Bearer 鉴权，这里只需校验并落盘新值。
+                # 返回后前端会用新 token 更新 localStorage，旧 token 立即失效。
+                new_token = set_token(payload.get("token", ""))
+                self.send_json({"ok": True, "token": new_token})
                 return
             self.send_error_json("Not found", 404)
         except Exception as exc:
