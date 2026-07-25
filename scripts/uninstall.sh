@@ -107,14 +107,22 @@ restore_radvd_state() {
 }
 
 restore_resolved_state() {
-  # 安装时若关闭了 systemd-resolved 的 stub listener，卸载按记录恢复：删掉 drop-in、还原 resolv.conf 软链、重启 resolved。
+  # 安装时若关闭了 systemd-resolved 的 stub listener，卸载按记录恢复：删掉 drop-in、精确还原 resolv.conf、重启 resolved。
   [ -e "$RESOLVED_DROPIN" ] || [ -r "$RESOLVED_STATE_FILE" ] || return 0
   rm -f "$RESOLVED_DROPIN"
   if [ -r "$RESOLVED_STATE_FILE" ]; then
     resolv_type="$(state_value resolv_conf_type "$RESOLVED_STATE_FILE")"
     resolv_target="$(state_value resolv_conf_target "$RESOLVED_STATE_FILE")"
-    if [ "$resolv_type" = "symlink" ] && [ -n "$resolv_target" ]; then
-      ln -sf "$resolv_target" /etc/resolv.conf
+    resolv_repointed="$(state_value resolv_repointed "$RESOLVED_STATE_FILE")"
+    # 只有安装时确实动过 resolv.conf 才还原，避免覆盖用户卸载前的新配置。
+    if [ "$resolv_repointed" = "1" ]; then
+      if [ "$resolv_type" = "symlink" ] && [ -n "$resolv_target" ]; then
+        ln -sf "$resolv_target" /etc/resolv.conf
+      elif [ "$resolv_type" = "file" ] && [ -r "$MANAGER_DIR/resolv.conf.before-sing-box" ]; then
+        # 普通文件（PVE/云镜像）从整份备份原样还原。
+        rm -f /etc/resolv.conf
+        cp -a "$MANAGER_DIR/resolv.conf.before-sing-box" /etc/resolv.conf
+      fi
     fi
   fi
   if systemctl list-unit-files systemd-resolved.service >/dev/null 2>&1; then

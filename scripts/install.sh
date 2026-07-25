@@ -364,19 +364,26 @@ PY
 
 disable_systemd_resolved_stub() {
   # Ubuntu/Debian 默认 systemd-resolved 在 127.0.0.53:53 起 stub listener，会占用 sing-box 的 DNS 入站。
-  # 处理策略：记录原状态 → 关闭 DNSStubListener → 把 /etc/resolv.conf 指向 resolved 的真实上游解析文件。
-  # 卸载时据 resolved-state 恢复。仅在 resolved 确实活跃且占用 53 时执行。
+  # 处理策略：记录原状态 → 关闭 DNSStubListener。仅当 /etc/resolv.conf 确实指向 stub(127.0.0.53) 时才重指向真实上游，
+  # 避免误伤 PVE/云镜像里已直连上游的普通 resolv.conf。卸载时据 resolved-state 精确还原。
   if ! unit_active systemd-resolved; then
     return 1
+  fi
+  local resolv_points_to_stub=0
+  if grep -qE '^\s*nameserver\s+127\.0\.0\.5[34]\b' /etc/resolv.conf 2>/dev/null; then
+    resolv_points_to_stub=1
   fi
   if [ ! -e "$RESOLVED_STATE_FILE" ]; then
     {
       printf "stub_listener_was=%s\n" "$(grep -E '^\s*DNSStubListener=' /etc/systemd/resolved.conf 2>/dev/null | tail -1 | sed 's/.*=//' | tr -d ' ' || true)"
+      printf "resolv_repointed=%s\n" "$resolv_points_to_stub"
       if [ -L /etc/resolv.conf ]; then
         printf "resolv_conf_type=symlink\n"
         printf "resolv_conf_target=%s\n" "$(readlink /etc/resolv.conf)"
       elif [ -e /etc/resolv.conf ]; then
         printf "resolv_conf_type=file\n"
+        # 普通文件整份备份，卸载时原样还原（PVE/云镜像常见）。
+        cp -a /etc/resolv.conf "$MANAGER_DIR/resolv.conf.before-sing-box" 2>/dev/null || true
       else
         printf "resolv_conf_type=absent\n"
       fi
@@ -392,12 +399,12 @@ DNSStubListener=no
 EOF
   chmod 0644 "$RESOLVED_DROPIN"
   systemctl restart systemd-resolved >/dev/null 2>&1 || true
-  # 关闭 stub 后 /etc/resolv.conf 若仍指向 stub-resolv.conf，本机自身解析会断；改指向 resolved 汇总的真实上游。
-  if [ -e /run/systemd/resolve/resolv.conf ]; then
+  # 只有原本走 stub 的机器，关掉 stub 后自身解析才会断；这类才需要把 resolv.conf 改指向 resolved 汇总的真实上游。
+  if [ "$resolv_points_to_stub" = "1" ] && [ -e /run/systemd/resolve/resolv.conf ]; then
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-    echo "systemd-resolved stub listener disabled; /etc/resolv.conf now points to upstream (via resolved)."
+    echo "systemd-resolved stub listener disabled; /etc/resolv.conf repointed to upstream (via resolved)."
   else
-    echo "systemd-resolved stub listener disabled." 
+    echo "systemd-resolved stub listener disabled; /etc/resolv.conf left unchanged (already using real upstream)."
   fi
   return 0
 }
