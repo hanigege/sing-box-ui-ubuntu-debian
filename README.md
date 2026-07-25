@@ -16,6 +16,7 @@
 - LAN 侧 DNS 指向本机时，sing-box 监听 53 端口处理 DNS 查询，降低 IPv4/IPv6 明文 DNS 泄漏
 - 规则更新由系统 `cron`（`/etc/cron.d`）管理，运行状态自愈每 2 分钟检查一次
 - `sing-box-gateway-info` 一键查看 9091 访问地址和 Rule UI token
+- 登录密码可自定义：安装时 `RULE_UI_TOKEN` 指定初始密码，装好后也能在 UI 维护页随时修改（至少 6 位，不含空格）
 
 ## 支持系统
 
@@ -41,6 +42,22 @@ curl -fsSL https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/
 # 脚本内置 ghproxy.net、gh-proxy.com、gh.llkk.cc 多级镜像加速和直连回退。
 curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/main/scripts/quick-install-proxy.sh | sh
 ```
+
+### 自定义 UI 登录密码（可选）
+
+默认随机生成 43 位 token，不好记。安装时用 `RULE_UI_TOKEN` 指定自己的密码（至少 6 位、不含空格），注意变量要放在 `sh` 之前才能穿透管道：
+
+```sh
+# 直连入口 + 自定义密码（把 mypass6 换成你自己的密码）
+curl -fsSL https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/main/scripts/quick-install.sh | RULE_UI_TOKEN=mypass6 sh
+```
+
+```sh
+# 反代入口 + 自定义密码
+curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/main/scripts/quick-install-proxy.sh | RULE_UI_TOKEN=mypass6 sh
+```
+
+密码不合规（少于 6 位或含空格）时自动回退为随机 token 并打印告警。已装好的机器不需要重装：直接登录 9091 → 维护页 → 「修改访问密码」即可随时更换；覆盖安装永远不会重置现有密码。
 
 安装器自动安装 apt 依赖：`curl`、`ca-certificates`、`tar`、`gzip`、`python3`、`nftables`、`iproute2`、`rsync`、`util-linux`、`coreutils`、`cron`、`logrotate`、`iputils-ping`。仓库内置的 `sing-box` 是 reF1nd 增强版 `v1.14.0-alpha.48-reF1nd` 静态二进制。卸载时默认保留 apt 包，避免连带移除系统基础依赖。
 
@@ -211,6 +228,8 @@ sing-box-gateway-info
 
 默认入口：`http://<网关IP>:9091/`。9090 Clash API 保留给 9091 后端读取连接、日志和运行规则；浏览器日常管理只需要进入 9091，并使用 Rule UI token 登录。
 
+觉得随机 token 难记？登录后在 **维护页 → 修改访问密码** 设置自己的密码（至少 6 位、不含空格），改完当前浏览器自动续用新密码，其它设备用新密码重新登录即可。
+
 ## 一键卸载
 
 已安装机器优先使用本地卸载器：
@@ -244,6 +263,12 @@ apt-get update && apt-get install -y git curl ca-certificates
 git clone https://github.com/hanigege/sing-box-ui-ubuntu-debian.git
 cd sing-box-ui-ubuntu-debian
 bash scripts/install.sh
+```
+
+Git 安装同样支持自定义 UI 登录密码：
+
+```bash
+RULE_UI_TOKEN=mypass6 bash scripts/install.sh
 ```
 
 本地卸载（交互式确认，静默模式加 `--yes`）：
