@@ -1543,11 +1543,20 @@ def apply_lan_probe_dns_reject(config):
     dns_rules = config.setdefault("dns", {}).setdefault("rules", [])
     dns_inbounds = dns_inbound_tags(config)
     dns_rules[:] = [rule for rule in dns_rules if not is_lan_probe_reject_rule(rule)]
-    insert_at = 0
+    # 局域网 AD/mDNS/单标签探测必须在 fakeip 兜底之前拒绝，否则 A 查询会先拿到 fakeip 假 IP
+    # 而不是快速 NXDOMAIN，导致 Windows/Apple 客户端把探测名送进代理链路刷 timeout。
+    # 插在 fakeip 兜底规则（无 rule_set 的 LAN 入站兜底）之前。
+    insert_at = len(dns_rules)
     for index, rule in enumerate(dns_rules):
-        if isinstance(rule, dict) and same_inbound(rule.get("inbound"), dns_inbounds):
-            insert_at = index + 1
-    # 局域网客户端会频繁探测 AD/mDNS/单标签主机名；这些名字不应送往远端 DNS，否则会刷 timeout/error 日志。
+        if (
+            isinstance(rule, dict)
+            and same_inbound(rule.get("inbound"), dns_inbounds)
+            and "rule_set" not in rule
+            and rule.get("action") == "route"
+            and rule.get("server") == "fakeip-dns"
+        ):
+            insert_at = index
+            break
     dns_rules.insert(
         insert_at,
         {
@@ -1577,10 +1586,13 @@ def dns_inbound_tags(config):
 
 
 def same_inbound(value, tags):
+    # 规则里的 inbound 写成 ["dns-in"] 或 ["dns-in","dns-in-v6"] 都算同一条 LAN 入站规则；
+    # 严格要求集合相等会让 base.json 里只写 dns-in 的旧规则在 dns_inbound_tags 含 dns-in-v6 时
+    # 既删不掉也算不进 insert_at，导致 fakeip 兜底被插到索引 0、把所有 rule_set 规则压在后面。
     expected = set(tags)
     if isinstance(value, list):
-        return set(value) == expected
-    return value in expected and len(expected) == 1
+        return bool(value) and set(value) <= expected
+    return value in expected
 
 
 def apply_ddns_dns_settings(config, groups):
