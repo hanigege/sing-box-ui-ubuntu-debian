@@ -16,11 +16,7 @@
         "afdback.ppsimg.com",
         "afdback.ptqy.gitv.tv",
         "arpa",
-        "bbrouter",
         "corp",
-        "ctc",
-        "dhcp",
-        "getcacheddhcpresultsforcurrentconfig",
         "home",
         "init.phpwind.net",
         "internal",
@@ -28,27 +24,21 @@
         "jddebug.com",
         "jomoxc.com",
         "jomoxd.com",
-        "jpg",
         "jsqmt.qq.com",
         "k8s",
+        "lan",
         "local",
-        "localdomain",
         "localhost",
-        "m4a",
         "mtvod-hw.meituan.net",
-        "openstacklocal",
         "smogfly.cloud",
         "stun.ideasip.com",
         "svc",
         "t-ring-fallbacks2.msedge.net",
         "test",
-        "volcsirius.com",
-        "wifi"
+        "volcsirius.com"
       ],
       "domain_regex": [
-        "[^a-zA-Z0-9._-]",
-        "^.*.arpa$",
-        "^.*.lan$",
+        "[^a-z0-9._-]",
         "^[^.]+$"
       ]
     }
