@@ -65,15 +65,12 @@
            <input id="valueInput" type="text" autocomplete="off" placeholder="example.com" />
            <button type="submit" data-i18n="add">Add</button>
          </form>
-          <!-- 批量编辑文本框：一行一个条目，格式 "类型前缀: 值"；不写前缀使用上方选中类型。支持直接粘贴域名列表。 -->
+          <!-- 批量编辑文本框：一行一个条目，格式 "类型前缀: 值"；不写前缀使用上方选中类型。
+              placeholder 和下方提示都由 renderListHint() 按当前表的允许类型动态生成，
+              避免 ddns 表（只支持 domain_suffix/domain）显示用不了的类型。 -->
          <textarea id="listTextarea" class="list-textarea"
-           placeholder="域名后缀: example.com&#10;完整域名: example.com&#10;关键词: keyword&#10;正则: ^pattern$&#10;IP/CIDR: 1.2.3.0/24&#10;也可以直接粘贴纯域名，会自动使用上方选中的类型"
            spellcheck="false"></textarea>
-         <p class="textarea-hint">
-           每行一个条目，格式：<code>类型: 值</code>。
-           支持的类型：<code>domain_suffix</code>（域名后缀）、<code>domain</code>（完整域名）、<code>domain_keyword</code>（关键词）、<code>domain_regex</code>（正则）、<code>ip_cidr</code>（IP/CIDR）。
-           不写类型前缀则自动使用上方下拉框选中的类型。例如粘贴 <code>google.com</code> 默认添加为<code>域名后缀: google.com</code>。
-         </p>
+         <p class="textarea-hint" id="listTextareaHint"></p>
         <div id="rows" class="rows"></div>
        </section>
 

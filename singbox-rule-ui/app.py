@@ -300,10 +300,19 @@ def clash_api_settings():
 
 
 def normalize_entry(entry):
-    kind = str(entry.get("type", "domain_suffix")).strip()
-    value = str(entry.get("value", "")).strip().lower().rstrip(".")
+    # 类型前缀大小写不敏感：UI 提示里写的是小写英文，但用户手打/粘贴常出现
+    # "Domain_Suffix"、"IP_CIDR" 这类混写，统一小写后再查白名单，避免整行被判非法。
+    kind = str(entry.get("type", "domain_suffix")).strip().lower()
+    value = str(entry.get("value", "")).strip()
     if kind not in ENTRY_TYPES:
         raise ValueError(f"Unsupported type: {kind}")
+    # domain_regex 是 Go regexp，大小写有语义（如 [^a-zA-Z0-9._-] 表示"排除大小写字母和数字"）。
+    # 早期这里对所有类型无条件 .lower()，会把该正则静默改成 [^a-za-z0-9._-]，
+    # 排除大写字母的意图丢失且不报错。域名类不区分大小写，继续规范化为小写；正则原样保留。
+    if kind == "domain_regex":
+        value = value.rstrip()
+    else:
+        value = value.lower().rstrip(".")
     if not value:
         raise ValueError("Empty value is not allowed")
     if kind == "ip_cidr":

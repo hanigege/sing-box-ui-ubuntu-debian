@@ -279,6 +279,21 @@ const translations = {
       domain_regex: "^api[0-9]+\\.example\\.com$",
       ip_cidr: "203.0.113.0/24",
     },
+    // 批量编辑框提示。按当前表允许的类型动态拼接，见 renderListHint()
+    textareaHint: {
+      format: "One entry per line, format:",
+      types: "Supported types:",
+      fallback:
+        "A line without a type prefix uses the type selected above, so pasting {example} is added as {applied}.",
+      caseNote: "Type prefixes are case-insensitive; the Chinese labels shown in the dropdown also work.",
+      regexNote:
+        "Regex values keep their original case ([^a-zA-Z0-9._-] is stored as typed). Every other type is lowercased, and a trailing dot is dropped.",
+      ipv6Note:
+        "IPv6 must use an explicit ip_cidr: prefix, otherwise the part before the first colon looks like a prefix.",
+      cidrNote: "ip_cidr must be a real network address: use 192.168.1.0/24, not 192.168.1.5/24.",
+      urlNote: "Paste bare domains only. A full URL such as https://example.com/path is rejected.",
+      fallbackShort: "or paste bare domains to use the type selected above",
+    },
     typeHelp: {
       domain: { use: "match one exact domain", example: "login.example.com" },
       domain_suffix: { use: "match this domain and all subdomains", example: "example.com" },
@@ -589,6 +604,19 @@ const translations = {
       domain_keyword: "google",
       domain_regex: "^api[0-9]+\\.example\\.com$",
       ip_cidr: "203.0.113.0/24",
+    },
+    // 批量编辑框提示。按当前表允许的类型动态拼接，见 renderListHint()
+    textareaHint: {
+      format: "每行一个条目，格式：",
+      types: "支持的类型：",
+      fallback: "不写类型前缀则自动使用上方下拉框选中的类型，例如粘贴 {example} 会添加为 {applied}。",
+      caseNote: "类型前缀不区分大小写，也可以直接用下拉框里的中文名称（如 域名后缀:）。",
+      regexNote:
+        "正则的大小写会原样保留（[^a-zA-Z0-9._-] 存进去还是这样）；其余类型统一转小写，并去掉结尾的点。",
+      ipv6Note: "IPv6 必须显式写 ip_cidr: 前缀，否则第一个冒号前的内容会被当成类型前缀。",
+      cidrNote: "ip_cidr 必须是真实网段：写 192.168.1.0/24，不能写 192.168.1.5/24。",
+      urlNote: "只能粘贴纯域名，带协议的完整网址（如 https://example.com/path）会被拒绝。",
+      fallbackShort: "也可以直接粘贴纯域名，会使用上方选中的类型",
     },
     typeHelp: {
       domain: { use: "只匹配这个完整域名", example: "home.example.com" },
@@ -945,6 +973,8 @@ function applyLanguage() {
   $("nodeCancel").textContent = t("cancelEdit");
   $("nodeTransportMode").querySelector('option[value="bbr"]').textContent = t("transportBbr");
   $("nodeTransportMode").querySelector('option[value="brutal"]').textContent = t("transportBrutal");
+  // 批量编辑框的 placeholder 和提示是运行时拼出来的，切换语言时要一起重画
+  renderListHint();
 }
 
 function goNodes() {
@@ -1971,7 +2001,51 @@ function renderTypeOptions() {
     select.appendChild(option);
   }
   updateValueHint();
+  renderListHint();
 }
+
+// renderListHint - 按当前表允许的类型生成 textarea 的 placeholder 和下方提示。
+// 之前这段是 index.html 里的硬编码中文，有三个问题：
+//   1. ddns 表只支持 domain_suffix/domain，却照样列出 5 种类型，照着填后端直接拒；
+//   2. 英文界面下也显示中文；
+//   3. 没有说明"正则保留大小写、其余转小写"和 IPv6 需显式前缀，用户容易踩坑。
+function renderListHint() {
+  const hint = $("listTextareaHint");
+  const ta = $("listTextarea");
+  if (!hint || !ta) return;
+  const types = allowedEntryTypes();
+  const dict = translations[lang];
+  const h = dict.textareaHint || {};
+  const labels = dict.types || {};
+  const ph = dict.placeholders || {};
+  const defaultType = ($("typeInput") && $("typeInput").value) || types[0];
+
+  // placeholder：每种允许的类型给一行示例，用英文前缀（解析器和后端的规范写法）
+  const lines = types.map((type) => `${type}: ${ph[type] || "example.com"}`);
+  lines.push(h.fallbackShort || (lang === "zh" ? "也可以直接粘贴纯域名" : "or paste bare domains"));
+  ta.placeholder = lines.join("\n");
+
+  // 提示正文：只列当前表允许的类型
+  const typeList = types.map((type) => `<code>${type}</code>（${labels[type] || type}）`).join("、");
+  const example = `<code>${ph[defaultType] || "google.com"}</code>`;
+  const applied = `<code>${defaultType}: ${ph[defaultType] || "google.com"}</code>`;
+  const fallback = String(h.fallback || "")
+    .replace("{example}", example)
+    .replace("{applied}", applied);
+
+  const parts = [
+    `${h.format || ""} <code>type: value</code>。`,
+    `${h.types || ""}${typeList}。`,
+    fallback,
+    h.caseNote,
+  ];
+  // 只有该表允许对应类型时才提示相关注意事项，避免 ddns 显示用不上的说明
+  if (types.includes("domain_regex")) parts.push(h.regexNote);
+  if (types.includes("ip_cidr")) parts.push(h.ipv6Note, h.cidrNote);
+  parts.push(h.urlNote);
+  hint.innerHTML = parts.filter(Boolean).join(" ");
+}
+
 
 function updateValueHint() {
   const type = $("typeInput").value || allowedEntryTypes()[0];
@@ -2608,11 +2682,49 @@ function removeEntry(target) {
   markChanged();
 }
 
+// 类型前缀别名表：中文标签 → 内部英文类型。
+// textarea 的 placeholder 用中文示例（域名后缀: example.com），但解析器早期只认
+// ASCII 英文前缀，照 placeholder 填会把整行当成值，保存时后端报 Invalid domain value。
+// 这里把中英文两套写法都收进来，UI 提示和实际行为才一致。
+const entryTypeAliases = (() => {
+  const map = new Map();
+  for (const type of allEntryTypes) map.set(type, type);
+  // 中文标签取自 translations.zh.types，避免两处硬编码不同步
+  for (const lc of ["zh", "en"]) {
+    const types = (translations[lc] || {}).types || {};
+    for (const [type, label] of Object.entries(types)) {
+      if (allEntryTypes.includes(type)) map.set(String(label).trim().toLowerCase(), type);
+    }
+  }
+  return map;
+})();
+
+// 解析一行里的 "类型前缀: 值"。识别失败返回 null，由调用方回退到下拉框类型。
+// 前缀大小写不敏感（Domain_Suffix / IP_CIDR 都认）；中文前缀含 "/" 等非 \w 字符，
+// 所以匹配段不能只用 [\w_]，改成"首个冒号之前"再查别名表。
+function parseTypePrefix(line, allowedTypes) {
+  const idx = line.indexOf(":");
+  if (idx <= 0) return null;
+  const rawPrefix = line.slice(0, idx).trim().toLowerCase();
+  const type = entryTypeAliases.get(rawPrefix);
+  // 未登记的前缀一律不当类型看待，避免 IPv6（2001:db8::/32）的首段被误认成前缀
+  if (!type || !allowedTypes.includes(type)) return null;
+  return { type, value: line.slice(idx + 1).trim() };
+}
+
+// 值规范化：与后端 normalize_entry 保持同一套规则，避免前端显示和落盘结果不一致。
+// domain_regex 大小写有语义，必须原样保留；其余类型统一小写并去掉结尾的点。
+function normalizeEntryValue(type, value) {
+  const trimmed = String(value).trim();
+  if (type === "domain_regex") return trimmed;
+  if (type === "ip_cidr") return trimmed.toLowerCase();
+  return trimmed.toLowerCase().replace(/\.$/, "");
+}
+
 function addEntry(event) {
   event.preventDefault();
   const type = $("typeInput").value;
-  let value = $("valueInput").value.trim().toLowerCase();
-  if (type !== "ip_cidr") value = value.replace(/\.$/, "");
+  const value = normalizeEntryValue(type, $("valueInput").value);
   if (!value) return;
   const exists = (state.lists[active] || []).some((item) => item.type === type && item.value === value);
   if (!exists) state.lists[active].push({ type, value });
@@ -2637,20 +2749,20 @@ function textareaToEntries(text) {
   for (let line of lines) {
     line = line.trim();
     if (!line) continue;
-    // 尝试解析 "类型前缀: 值" 格式
-    const colonMatch = line.match(/^([\w_]+):\s*(.*)$/);
+    // 尝试解析 "类型前缀: 值" 格式（中英文前缀均可，大小写不敏感）
+    const parsed = parseTypePrefix(line, allowedTypes);
     let type, value;
-    if (colonMatch && allowedTypes.includes(colonMatch[1])) {
-      type = colonMatch[1];
-      value = colonMatch[2].trim();
+    if (parsed) {
+      type = parsed.type;
+      value = parsed.value;
     } else {
       // 没有识别出类型前缀，使用当前下拉框选中的类型
       type = defaultType;
       value = line;
     }
     if (!value) continue;
-    if (type !== "ip_cidr") value = value.replace(/\.$/, "");
-    value = value.toLowerCase();
+    value = normalizeEntryValue(type, value);
+    if (!value) continue;
     const key = `${type}:${value}`;
     if (seen.has(key)) continue;
     seen.add(key);
