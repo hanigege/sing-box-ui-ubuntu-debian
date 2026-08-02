@@ -392,11 +392,16 @@ button[data-i18n="updateRules"] {
 
 .list-textarea {
   width: 100%;
-  min-height: 600px;
+  min-height: 460px;
   resize: vertical;
   padding: 12px;
   border-radius: var(--radius-m);
   margin-bottom: 6px;
+}
+
+/* DDNS 本地名单条目少，单独用较小高度 */
+.list-textarea.ddns-textarea {
+  min-height: 180px;
 }
 
 .textarea-hint {

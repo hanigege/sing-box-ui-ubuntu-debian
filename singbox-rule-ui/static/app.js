@@ -2807,6 +2807,8 @@ function renderListTextarea(items) {
     ta.dataset.active = active;
     ta.value = entriesToText(items);
   }
+  // DDNS 名单条目少，单独用较小高度；其他名单恢复默认大高度
+  ta.classList.toggle("ddns-textarea", active === "ddns");
 }
 
 async function save(silent = false) {
