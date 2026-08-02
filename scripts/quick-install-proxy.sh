@@ -4,8 +4,8 @@ set -eu
 REPO="${SING_BOX_GATEWAY_REPO:-hanigege/sing-box-ui-ubuntu-debian}"
 REF="${SING_BOX_GATEWAY_REF:-main}"
 ACTION="${1:-install}"
-PROXY_PREFIX="${SING_BOX_GATEWAY_PROXY_PREFIX:-https://ghproxy.net/}"
-PROXY_PREFIXES="${SING_BOX_GATEWAY_PROXY_PREFIXES:-${PROXY_PREFIX},https://gh-proxy.com/,https://gh.llkk.cc/}"
+PROXY_PREFIX="${SING_BOX_GATEWAY_PROXY_PREFIX:-https://gh-proxy.com/}"
+PROXY_PREFIXES="${SING_BOX_GATEWAY_PROXY_PREFIXES:-${PROXY_PREFIX},https://ghproxy.net/}"
 
 if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
   echo "缺少 curl/wget，请先安装 curl：apt-get install -y curl ca-certificates" >&2

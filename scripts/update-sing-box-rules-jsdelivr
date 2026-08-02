@@ -36,10 +36,9 @@ cleanup() {
 trap cleanup EXIT
 
 DEFAULT_RAW_MIRRORS=(
+  "https://gh-proxy.com/https://raw.githubusercontent.com"
   "https://ghproxy.net/https://raw.githubusercontent.com"
   "https://raw.githubusercontent.com"
-  "https://gh-proxy.com/https://raw.githubusercontent.com"
-  "https://gh.llkk.cc/https://raw.githubusercontent.com"
 )
 DEFAULT_CDN_MIRRORS=(
   "https://cdn.jsdelivr.net/gh"
