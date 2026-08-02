@@ -1,46 +1,4 @@
 {
   "version": 3,
-  "rules": [
-    {
-      "domain": [
-        "maplocatesdksnapshot.d.meituan.net",
-        "msmp.abchina.com.cn",
-        "ntp.nasa.gov",
-        "pti.store.microsoft.com",
-        "route-stats.d.meituan.net",
-        "stun.l.google.com",
-        "trace-server.prod-clustered.bugs.firebat.prime-video.amazon.dev",
-        "xmbc.highrez.co.uk"
-      ],
-      "domain_suffix": [
-        "afdback.ppsimg.com",
-        "afdback.ptqy.gitv.tv",
-        "arpa",
-        "corp",
-        "home",
-        "init.phpwind.net",
-        "internal",
-        "invalid",
-        "jddebug.com",
-        "jomoxc.com",
-        "jomoxd.com",
-        "jsqmt.qq.com",
-        "k8s",
-        "lan",
-        "local",
-        "localhost",
-        "mtvod-hw.meituan.net",
-        "smogfly.cloud",
-        "stun.ideasip.com",
-        "svc",
-        "t-ring-fallbacks2.msedge.net",
-        "test",
-        "volcsirius.com"
-      ],
-      "domain_regex": [
-        "[^a-z0-9._-]",
-        "^[^.]+$"
-      ]
-    }
-  ]
+  "rules": []
 }
