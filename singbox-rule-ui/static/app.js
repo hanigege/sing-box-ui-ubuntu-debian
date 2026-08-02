@@ -2213,13 +2213,20 @@ function renderLocalDnsSettings() {
     const name = document.createElement("strong");
     name.textContent = dnsChoiceDisplay(key, item);
     const value = document.createElement("span");
+    value.className = "dns-delay-value";
+    const delayEl = document.createElement("span");
+    delayEl.className = "dns-delay-ms";
+    const hostEl = document.createElement("span");
+    hostEl.className = "dns-delay-host";
     if (!measured) {
-      value.textContent = t("dnsDelayEmpty");
+      delayEl.textContent = t("dnsDelayEmpty");
     } else if (measured.ok) {
-      value.textContent = `${measured.delay} ms${dnsDelayHost ? ` · ${dnsDelayHost}` : ""}`;
+      delayEl.textContent = `${measured.delay} ms`;
+      hostEl.textContent = dnsDelayHost || "";
     } else {
-      value.textContent = `${t("dnsDelayFailed")}: ${measured.error || t("unknown")}`;
+      delayEl.textContent = `${t("dnsDelayFailed")}: ${measured.error || t("unknown")}`;
     }
+    value.append(delayEl, hostEl);
     row.append(name, value);
     rows.appendChild(row);
   }

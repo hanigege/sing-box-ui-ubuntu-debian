@@ -608,12 +608,42 @@ button[data-i18n="updateRules"] {
 .dns-delay-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 8px 12px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   font-size: 13px;
+}
+
+/* 右列：延迟与测试域名拆成两行、右对齐，保证各行在同一垂直线上 */
+.dns-delay-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  text-align: right;
+}
+
+.dns-delay-ms {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dns-delay-host {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 窄屏：DNS 名称可能很长，允许名称换行而不挤压右列 */
+@media (max-width: 767px) {
+  .dns-delay-row > strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
 .dns-note {
