@@ -231,11 +231,11 @@ const translations = {
     testingDelay: "Testing node delay",
     delayUpdated: "Delay updated",
     autoTitle: "Auto",
-    autoNote: "Urltest selects a node by latency; idle_timeout re-tests after idle (official fallback protection).",
+    autoNote: "Urltest re-tests every node each interval and picks the lowest latency; a candidate must be at least 50ms faster than the current one to take over (official tolerance default, anti-flapping).",
     autoUrl: "Test URL",
     autoInterval: "Interval",
-    autoFallbackProtect: "Fallback protection",
-    autoFallbackNote: "Official sing-box: idle_timeout 30m auto re-test after idle.",
+    autoIdleTitle: "Idle stop",
+    autoIdleNote: "After 30 minutes with no traffic through the Auto group, periodic testing stops (idle_timeout 30m) and resumes automatically on the next connection. Resource saving only \u2014 it does not affect node selection. The interval must not exceed 30m or sing-box refuses to start.",
     nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
@@ -557,11 +557,11 @@ const translations = {
     testingDelay: "正在检测节点延迟",
     delayUpdated: "延迟已更新",
     autoTitle: "Auto 自动选择",
-    autoNote: "urltest 按延迟选节点；空闲后 idle_timeout 自动重新测速（官方回退保护）。",
+    autoNote: "urltest 每隔「检测间隔」重测所有节点，选延迟最低的；候选节点要比当前节点快 50ms 以上才会接替（官方 tolerance 默认值，防抖）。",
     autoUrl: "测速链接",
     autoInterval: "检测间隔",
-    autoFallbackProtect: "回退保护",
-    autoFallbackNote: "官方 sing-box：空闲 30m 后自动重新测速（idle_timeout 30m）。",
+    autoIdleTitle: "空闲停测",
+    autoIdleNote: "Auto 组连续 30 分钟没有流量经过时停止周期测速（idle_timeout 30m），下次有连接自动恢复。只省资源，不影响选路。检测间隔不能大于 30m，否则 sing-box 拒绝启动。",
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
@@ -2255,7 +2255,8 @@ function renderNodes() {
   state.groups.telegram = state.groups.telegram || {};
   if (document.activeElement !== $("autoUrl")) $("autoUrl").value = state.groups.auto.url || "https://www.gstatic.com/generate_204";
   if (document.activeElement !== $("autoInterval")) $("autoInterval").value = state.groups.auto.interval || "30s";
-  // 官方版回退保护 = urltest idle_timeout（固定 30m），无独立开关；说明文案展示即可。
+  // idle_timeout 固定 30m，无独立开关：官方语义是「空闲超时后停止周期测速」（省资源，
+  // 见 protocol/group/urltest.go loopCheck），不是重新测速，也不是 reF1nd fallback 的等价物。
   $("interruptConnections").checked =
     state.groups.proxy.interrupt_exist_connections === true || state.groups.auto.interrupt_exist_connections === true;
   renderLocalDnsSettings();
@@ -3030,7 +3031,7 @@ function syncNodeSettingsFromForm() {
   state.groups.auto = state.groups.auto || {};
   state.groups.auto.url = $("autoUrl").value.trim();
   state.groups.auto.interval = $("autoInterval").value.trim();
-  // 官方版回退保护固定用 idle_timeout 30m（urltest 空闲后重新测速），不再配置 fallback/max_delay
+  // 官方版固定 idle_timeout 30m（空闲 30m 停止周期测速，有流量再恢复），不再配置 reF1nd 的 fallback/max_delay
   state.groups.auto.idle_timeout = "30m";
   state.groups.auto.interrupt_exist_connections = $("interruptConnections").checked;
   state.groups.dns = state.groups.dns || {};

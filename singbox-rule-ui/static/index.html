@@ -100,8 +100,8 @@
               <input id="autoInterval" type="text" autocomplete="off" placeholder="30s" />
             </label>
             <div class="wide-field">
-              <span data-i18n="autoFallbackProtect">Fallback protection</span>
-              <p id="autoFallbackNote" class="setting-note" data-i18n="autoFallbackNote">Official sing-box: idle_timeout 30m auto re-test.</p>
+              <span data-i18n="autoIdleTitle">Idle stop</span>
+              <p id="autoIdleNote" class="setting-note" data-i18n="autoIdleNote">Periodic testing stops after 30 minutes without traffic through the Auto group (idle_timeout 30m) and resumes on the next connection.</p>
             </div>
             <label class="switch-field">
               <span data-i18n="interruptConnections">Interrupt old connections</span>
@@ -287,6 +287,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-nocfgdir"></script>
+    <script src="/app.js?v=20260813-autonote"></script>
   </body>
 </html>

@@ -912,7 +912,8 @@ def render_config(nodes=None, groups=None, rule_dir=RULE_DIR, normalized_lists=N
         "outbounds": preferred_auto_outbounds(tags, groups),
         "url": groups.get("auto", {}).get("url", "https://www.gstatic.com/generate_204"),
         "interval": groups.get("auto", {}).get("interval", "30s"),
-        # 官方 sing-box 回退保护：空闲 idle_timeout 后重新测速选优（等价 reF1nd fallback）
+        # 官方 sing-box urltest：idle_timeout 到点后停止周期测速（有流量再恢复），
+        # 不是 reF1nd fallback 的等价物；节点切换由 interval + tolerance(默认 50ms) 决定
         "idle_timeout": groups.get("auto", {}).get("idle_timeout", "30m"),
         # 默认只影响新连接；如果用户开启高级开关，则允许切换时主动清理旧连接。
         "interrupt_exist_connections": normalize_bool(
