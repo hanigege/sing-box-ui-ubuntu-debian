@@ -198,7 +198,12 @@ for raw in Path(source_path).read_text(encoding="utf-8").splitlines():
     if "," in line:
         parts = [part.strip().strip("'\"") for part in line.split(",")]
         line = next((part for part in parts if "/" in part), line)
-    items.append(ipaddress.ip_network(line, strict=False))
+    # 单行脏数据(镜像回 HTML 错误页/截断)跳过即可，不让整次更新失败；
+    # 下方 v4+v6 双栈强校验兜底，垃圾内容仍会被整体拒绝。
+    try:
+        items.append(ipaddress.ip_network(line, strict=False))
+    except ValueError:
+        continue
 collapsed = []
 for version in (4, 6):
     collapsed.extend(ipaddress.collapse_addresses([item for item in items if item.version == version]))

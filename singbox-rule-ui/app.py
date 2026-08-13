@@ -473,6 +473,7 @@ def default_telegram_cidrs():
 
 def parse_telegram_cidr_text(text):
     items = []
+    invalid_lines = []
     for raw_line in str(text or "").splitlines():
         line = raw_line.split("#", 1)[0].strip().strip("'\"")
         if not line:
@@ -482,7 +483,15 @@ def parse_telegram_cidr_text(text):
         if "," in line:
             parts = [part.strip().strip("'\"") for part in line.split(",")]
             line = next((part for part in parts if "/" in part), line)
-        items.append(str(ipaddress.ip_network(line, strict=False)))
+        # 单行脏数据(镜像返回 HTML 错误页/截断行)不应让整次更新崩掉——
+        # 跳过并记录，最终以"是否解析出合法的 v4+v6 网段"为准(normalize 里强校验)。
+        try:
+            items.append(str(ipaddress.ip_network(line, strict=False)))
+        except ValueError:
+            invalid_lines.append(line)
+            continue
+    if invalid_lines and not items:
+        raise ValueError(f"No valid CIDR lines found (first invalid: {invalid_lines[0][:80]})")
     return normalize_telegram_cidrs(items)
 
 
@@ -1259,15 +1268,19 @@ def apply_portable_listeners(config):
         config.setdefault("inbounds", []).append({"type": "direct", "tag": "dns-in-v6", "listen": ipv6_listen, "listen_port": 53})
     socks5_port = int(load_groups().get("socks5", {}).get("port", 0) or 0)
     existing_socks5 = [i for i in config.get("inbounds", []) if isinstance(i, dict) and i.get("type") == "socks"]
+    # socks 入站只绑 LAN IPv4，绝不监听 "::"——网关若有全局 IPv6，"::" 等于把
+    # 无鉴权 socks5 直接暴露到公网。LAN 客户端本来就是通过网关 IPv4 地址使用它，
+    # 绑 lan_ip 不损失功能；拿不到 lan_ip 时兜底 127.0.0.1，宁可暂时只本机可用也不裸奔。
+    socks_listen = lan_ip or "127.0.0.1"
     if socks5_port > 0 and socks5_port <= 65535:
         if existing_socks5:
             existing_socks5[0]["listen_port"] = socks5_port
-            existing_socks5[0]["listen"] = "::"
+            existing_socks5[0]["listen"] = socks_listen
         else:
             config.setdefault("inbounds", []).append({
                 "type": "socks",
                 "tag": "socks-in",
-                "listen": "::",
+                "listen": socks_listen,
                 "listen_port": socks5_port,
                 "sniff": False,
             })
@@ -1318,15 +1331,20 @@ def preferred_ipv6_listener(lan_ip):
         if expected and expected in addresses:
             return str(expected)
 
+    # 只在私有(ULA)地址上监听 53 端口 DNS。全局单播(GUA)可被公网直接路由，
+    # 绑上去等于对全网开放递归解析(开放解析器会被滥用于 DNS 放大攻击)。
+    # 没有 ULA 时宁可不提供 IPv6 DNS 监听(dns-in-v6 会被移除)，也不裸奔。
+    private_addresses = [address for address in addresses if address.is_private]
+    if not private_addresses:
+        return ""
+
     def score(address):
         text = str(address)
-        if address.is_private and "ff:fe" not in text:
+        if "ff:fe" not in text:
             return 0
-        if address.is_private:
-            return 1
-        return 2
+        return 1
 
-    return str(sorted(addresses, key=score)[0])
+    return str(sorted(private_addresses, key=score)[0])
 
 
 def remove_inbound_tag(config, tag):
