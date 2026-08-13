@@ -467,6 +467,25 @@ EOF
   systemctl restart cron >/dev/null 2>&1 || systemctl start cron >/dev/null 2>&1 || true
 }
 
+# NTP 守护进程判别：Ubuntu 24.04+ 默认 chrony，旧版/Debian 多为 systemd-timesyncd。
+# 判据用「chrony unit 真实存在」而不是 `command -v chronyd`——容器镜像里可能残留
+# 二进制但无 unit，那种情况下写 chrony 配置也不会有守护进程去读。
+CHRONY_CONF_DIR="/etc/chrony/conf.d"
+CHRONY_CONF_FILE="$CHRONY_CONF_DIR/10-china-ntp.conf"
+# 主配置路径：Debian/Ubuntu 是 /etc/chrony/chrony.conf，兼容少数镜像的 /etc/chrony.conf。
+CHRONY_MAIN_CONF="/etc/chrony/chrony.conf"
+[ -f "$CHRONY_MAIN_CONF" ] || [ ! -f /etc/chrony.conf ] || CHRONY_MAIN_CONF="/etc/chrony.conf"
+
+ntp_daemon_is_chrony() {
+  for unit in chrony chronyd; do
+    if systemctl list-unit-files "${unit}.service" 2>/dev/null | grep -q "^${unit}.service"; then
+      CHRONY_UNIT="$unit"
+      return 0
+    fi
+  done
+  return 1
+}
+
 setup_ntp_china() {
   # 时区固定为北京时间(Asia/Shanghai)：网关面向国内用户，日志时间戳与
   # 用户本地时间一致才便于排障。
@@ -476,26 +495,61 @@ setup_ntp_china() {
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
     echo "Asia/Shanghai" > /etc/timezone
   fi
-  # NTP 上游用国内源：境内访问 Debian/Ubuntu 默认的 *.pool.ntp.org 常有
+  # NTP 上游用国内源：境内访问 Debian/Ubuntu 默认的 *.pool.ntp.org / ntp.ubuntu.com 常有
   # 丢包/高延迟，而 AEAD-2022 要求时钟精度在 30 秒内，源不稳会让节点间歇性失效。
-  install -d -m 0755 /etc/systemd/timesyncd.conf.d
-  cat > /etc/systemd/timesyncd.conf.d/10-china-ntp.conf <<'NTPCONF'
+  #
+  # ⚠️ 发行版差异：Ubuntu 24.04+ 默认装 chrony 而不是 systemd-timesyncd（26.04 上
+  # systemd-timesyncd 包根本不存在，systemctl 报 not-found）。只写 timesyncd dropin
+  # 会变成死配置——国内源零生效，时钟仍走 ntp.ubuntu.com。故按实际存在的守护进程分派：
+  # 有 chrony 就写 chrony 的 conf.d，否则写 timesyncd dropin。
+  if ntp_daemon_is_chrony; then
+    install -d -m 0755 "$CHRONY_CONF_DIR"
+    cat > "$CHRONY_CONF_FILE" <<'NTPCONF'
+# sing-box 网关：国内 NTP 源（AEAD-2022 依赖 30 秒内的时钟精度）
+# prefer 让 chrony 优先采信这些源，避免继续锁定发行版默认的境外源。
+server ntp.aliyun.com iburst prefer
+server ntp1.aliyun.com iburst
+server time1.cloud.tencent.com iburst
+server cn.pool.ntp.org iburst
+server ntp.tuna.tsinghua.edu.cn iburst
+NTPCONF
+    # ⚠️ Ubuntu 26.04 的 /etc/chrony/chrony.conf 里没有 confdir 指令，
+    # /etc/chrony/conf.d/ 虽然存在却根本不被读取（发行版自带的 ubuntu-nts.conf
+    # 同样是死配置）。只丢文件进 conf.d 不补 confdir，国内源不会生效——
+    # 2026-08-13 在 10.20.20.2 上实测踩到：配置写对了但 chronyc sources 全是
+    # ntp.ubuntu.com。故此处显式补 confdir，且用 grep 幂等，重复安装不叠加。
+    if [ -f "$CHRONY_MAIN_CONF" ] && ! grep -qE "^\s*confdir\s+.*$CHRONY_CONF_DIR" "$CHRONY_MAIN_CONF"; then
+      printf '\n# sing-box 网关：读取 conf.d 下的国内 NTP 源配置\nconfdir %s\n' \
+        "$CHRONY_CONF_DIR" >> "$CHRONY_MAIN_CONF"
+    fi
+  else
+    install -d -m 0755 /etc/systemd/timesyncd.conf.d
+    cat > /etc/systemd/timesyncd.conf.d/10-china-ntp.conf <<'NTPCONF'
 # sing-box 网关：国内 NTP 源（AEAD-2022 依赖 30 秒内的时钟精度）
 [Time]
 NTP=ntp.aliyun.com ntp1.aliyun.com time1.cloud.tencent.com
 FallbackNTP=cn.pool.ntp.org ntp.tuna.tsinghua.edu.cn
 NTPCONF
+  fi
 }
 
 enable_services() {
   # NTP 时钟同步：Shadowsocks AEAD-2022(2022-blake3-*) 有防重放保护，客户端与服务端
   # 时间差超过 30 秒会被服务端直接拒连(日志: invalid timestamp)，表现为节点"能连但 0 B/s"。
-  # 网关时钟一旦漂移，所有 2022 加密节点集体失效，故安装时确保 systemd-timesyncd 已启用。
+  # 网关时钟一旦漂移，所有 2022 加密节点集体失效，故安装时确保 NTP 守护进程已启用。
   # 注意：这与 disable_systemd_resolved_stub 处理的 systemd-resolved 是两个独立服务，互不影响。
   setup_ntp_china
-  systemctl enable systemd-timesyncd >/dev/null 2>&1 || true
-  # 先 restart 让 timesyncd.conf.d 里的国内 NTP 源立即生效（start 对已运行实例不重载配置）。
-  systemctl restart systemd-timesyncd >/dev/null 2>&1 || systemctl start systemd-timesyncd >/dev/null 2>&1 || true
+  # 按 setup_ntp_china 实际写入的配置目标启用对应守护进程，两者不能混：
+  # 在 Ubuntu 24.04+ 上 systemd-timesyncd 不存在，enable 它只会静默失败，时钟无人按国内源校准。
+  if ntp_daemon_is_chrony; then
+    systemctl enable "$CHRONY_UNIT" >/dev/null 2>&1 || true
+    # 必须 restart：chrony 已在运行时 start 是 no-op，不会重读 conf.d 里的国内源。
+    systemctl restart "$CHRONY_UNIT" >/dev/null 2>&1 || systemctl start "$CHRONY_UNIT" >/dev/null 2>&1 || true
+  else
+    systemctl enable systemd-timesyncd >/dev/null 2>&1 || true
+    # 先 restart 让 timesyncd.conf.d 里的国内 NTP 源立即生效（start 对已运行实例不重载配置）。
+    systemctl restart systemd-timesyncd >/dev/null 2>&1 || systemctl start systemd-timesyncd >/dev/null 2>&1 || true
+  fi
   systemctl enable sing-box-tproxy >/dev/null 2>&1 || true
   systemctl enable sing-box >/dev/null 2>&1 || true
   systemctl enable singbox-rule-ui >/dev/null 2>&1 || true

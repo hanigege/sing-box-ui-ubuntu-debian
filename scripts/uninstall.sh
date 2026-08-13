@@ -215,10 +215,20 @@ main() {
     /usr/local/bin/sing-box-gateway-uninstall \
     "$LOGROTATE_CONFIG" \
     /etc/sysctl.d/99-sing-box-tproxy.conf \
-    /etc/systemd/timesyncd.conf.d/10-china-ntp.conf
-  # timesyncd 的国内 NTP dropin 由安装器写入，卸载时一并移除并重载，
-  # 让系统回到发行版默认 NTP 源（不停用 timesyncd 本身，避免影响其它服务）。
+    /etc/systemd/timesyncd.conf.d/10-china-ntp.conf \
+    /etc/chrony/conf.d/10-china-ntp.conf
+  # 国内 NTP 配置由安装器写入（Ubuntu 24.04+ 走 chrony，其余走 timesyncd），
+  # 卸载时两个路径都移除并重载对应守护进程，让系统回到发行版默认 NTP 源。
+  # 不停用守护进程本身——停掉会让卸载后系统时钟彻底无人校准。
+  # chrony 主配置里的 confdir 行也是安装器追加的，一并删掉，避免留下指向空目录的配置。
+  for chrony_conf in /etc/chrony/chrony.conf /etc/chrony.conf; do
+    [ -f "$chrony_conf" ] || continue
+    if grep -q "sing-box 网关：读取 conf.d" "$chrony_conf" 2>/dev/null; then
+      sed -i '/# sing-box 网关：读取 conf.d/,+1d' "$chrony_conf"
+    fi
+  done
   systemctl restart systemd-timesyncd >/dev/null 2>&1 || true
+  systemctl restart chrony >/dev/null 2>&1 || systemctl restart chronyd >/dev/null 2>&1 || true
   # 兼容早期可能残留的 OpenRC init 脚本。
   rm -f /etc/init.d/sing-box /etc/init.d/sing-box-tproxy /etc/init.d/singbox-rule-ui
   systemctl daemon-reload >/dev/null 2>&1 || true

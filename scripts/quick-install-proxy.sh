@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# ⚠️ `curl ... | sh` 的固有缺陷：管道左侧 curl 失败（网络 reset、DNS 污染、
+# 反代挂掉）时 sh 读到空输入或半截脚本，仍然退出码 0，用户看到「装完了」但
+# 什么都没发生；截断更危险——前半段可能已经改了系统状态。
+# 防线一：main 函数包裹全部逻辑，末尾才调用。脚本被截断时 main 定义不完整或
+# 调用行缺失，sh 会报语法错/什么都不执行，而不是执行半截安装。
+# 防线二：README 推荐先落盘再执行的两步式命令，让 curl 的非零退出码可见。
+main() {
+
 REPO="${SING_BOX_GATEWAY_REPO:-hanigege/sing-box-ui-ubuntu-debian}"
 REF="${SING_BOX_GATEWAY_REF:-main}"
 ACTION="${1:-install}"
@@ -37,8 +45,11 @@ download_first() {
       if curl -fL --connect-timeout 10 --max-time 120 "$url" -o "$output"; then
         return 0
       fi
-    elif wget -T 120 -O "$output" "$url"; then
-      return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+      if wget -T 120 -O "$output" "$url"; then
+        return 0
+      fi
     fi
   done
   return 1
@@ -110,3 +121,7 @@ fi
 
 # shellcheck disable=SC2086
 exec bash "$target" $args
+}
+
+# 完整性哨兵：只有脚本被完整读入时才会执行到这一行。
+main "$@"

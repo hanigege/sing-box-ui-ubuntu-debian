@@ -37,6 +37,16 @@
 curl -fsSL https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/main/scripts/quick-install.sh | sh
 ```
 
+> ⚠️ **网络不稳的机器请用下面的两步式命令**。`curl ... | sh` 有个固有缺陷：curl
+> 若因网络 reset / DNS 污染 / 反代失效而下载失败，`sh` 读到空输入照样返回退出码 0，
+> 屏幕上只有一行 curl 报错，看起来却像「装完了」，实际什么都没执行。先落盘再执行
+> 能让失败真正暴露出来（`&&` 会在下载失败时直接中止）：
+>
+> ```sh
+> curl -fsSL -o /tmp/sb-install.sh https://raw.githubusercontent.com/hanigege/sing-box-ui-ubuntu-debian/main/scripts/quick-install.sh \
+>   && sh /tmp/sb-install.sh
+> ```
+
 ```sh
 # 入口二：gh-proxy.com 反代（境内或 GitHub 直连不稳定的机器）
 # 脚本内置 gh-proxy.com、ghproxy.net 多级镜像加速和直连回退。
