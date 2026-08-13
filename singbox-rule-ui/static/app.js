@@ -65,8 +65,11 @@ const translations = {
     setDefault: "Set default",
     defaultSaved: "Saved default",
     activeNow: "Active now",
-    pendingDefault: "Default changed. Save to persist and restart sing-box.",
+    pendingDefault: "Default changed. It takes effect immediately; save persists it for the next start.",
     proxySwitchFailed: "Runtime proxy switch failed. Save can still persist the config.",
+    switchingProxy: "Switching node\u2026",
+    proxySwitched: "Node switched (no restart, existing connections kept)",
+    persistFailed: "Not persisted",
     delay: "Delay",
     delayUnknown: "Not tested",
     delayFailed: "Failed",
@@ -231,11 +234,12 @@ const translations = {
     testingDelay: "Testing node delay",
     delayUpdated: "Delay updated",
     autoTitle: "Auto",
-    autoNote: "Urltest re-tests every node each interval and picks the lowest latency; a candidate must be at least 50ms faster than the current one to take over (official tolerance default, anti-flapping).",
+    autoNote: "Urltest re-tests every node each interval and picks the lowest latency; a candidate must beat the current one by more than the tolerance to take over.",
     autoUrl: "Test URL",
     autoInterval: "Interval",
-    autoIdleTitle: "Idle stop",
-    autoIdleNote: "After 30 minutes with no traffic through the Auto group, periodic testing stops (idle_timeout 30m) and resumes automatically on the next connection. Resource saving only \u2014 it does not affect node selection. The interval must not exceed 30m or sing-box refuses to start.",
+    autoTolerance: "Tolerance (ms)",
+    autoIdleTimeout: "Idle timeout",
+    autoIdleNote: "Idle timeout: once no traffic goes through the Auto group for this long, periodic testing stops and resumes automatically on the next connection \u2014 resource saving only, it does not affect node selection. Tolerance is the anti-flapping threshold: a candidate must be at least this many ms faster to take over. Idle timeout must be greater than or equal to the interval, otherwise sing-box refuses to start.",
     nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
@@ -391,8 +395,11 @@ const translations = {
     setDefault: "设为默认",
     defaultSaved: "已保存默认",
     activeNow: "当前生效",
-    pendingDefault: "默认代理已切换，保存后会持久化并重启 sing-box",
+    pendingDefault: "默认节点已切换并立即生效；保存只是让它在下次启动时保持",
     proxySwitchFailed: "运行态切换失败；仍可保存配置让它持久化生效",
+    switchingProxy: "正在切换节点\u2026",
+    proxySwitched: "节点已切换（无需重启，现有连接不断）",
+    persistFailed: "未能持久化",
     delay: "延迟",
     delayUnknown: "未检测",
     delayFailed: "失败",
@@ -557,11 +564,12 @@ const translations = {
     testingDelay: "正在检测节点延迟",
     delayUpdated: "延迟已更新",
     autoTitle: "Auto 自动选择",
-    autoNote: "urltest 每隔「检测间隔」重测所有节点，选延迟最低的；候选节点要比当前节点快 50ms 以上才会接替（官方 tolerance 默认值，防抖）。",
+    autoNote: "urltest 每隔「检测间隔」重测所有节点，选延迟最低的；候选节点要比当前节点快出「切换容差」才会接替。",
     autoUrl: "测速链接",
     autoInterval: "检测间隔",
-    autoIdleTitle: "空闲停测",
-    autoIdleNote: "Auto 组连续 30 分钟没有流量经过时停止周期测速（idle_timeout 30m），下次有连接自动恢复。只省资源，不影响选路。检测间隔不能大于 30m，否则 sing-box 拒绝启动。",
+    autoTolerance: "切换容差（毫秒）",
+    autoIdleTimeout: "空闲停测",
+    autoIdleNote: "空闲停测：Auto 组连续这么久没有流量经过时停止周期测速，下次有连接自动恢复——只省资源，不影响选路。切换容差是防抖阈值：候选节点要比当前节点快这么多毫秒才会接替，设 0 会在延迟抖动时反复横跳。空闲停测必须不小于检测间隔，否则 sing-box 拒绝启动。",
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
@@ -2255,8 +2263,12 @@ function renderNodes() {
   state.groups.telegram = state.groups.telegram || {};
   if (document.activeElement !== $("autoUrl")) $("autoUrl").value = state.groups.auto.url || "https://www.gstatic.com/generate_204";
   if (document.activeElement !== $("autoInterval")) $("autoInterval").value = state.groups.auto.interval || "30s";
-  // idle_timeout 固定 30m，无独立开关：官方语义是「空闲超时后停止周期测速」（省资源，
-  // 见 protocol/group/urltest.go loopCheck），不是重新测速，也不是 reF1nd fallback 的等价物。
+  // 官方语义：idle_timeout 是「空闲超时后停止周期测速」（省资源，见 protocol/group/urltest.go
+  // loopCheck），不是重新测速；tolerance 才是节点接替的防抖阈值（Select 里 minDelay > delay+tolerance）。
+  if (document.activeElement !== $("autoIdleTimeout")) $("autoIdleTimeout").value = state.groups.auto.idle_timeout || "30m";
+  if (document.activeElement !== $("autoTolerance")) {
+    $("autoTolerance").value = state.groups.auto.tolerance ?? 50;
+  }
   $("interruptConnections").checked =
     state.groups.proxy.interrupt_exist_connections === true || state.groups.auto.interrupt_exist_connections === true;
   renderLocalDnsSettings();
@@ -2499,7 +2511,10 @@ async function chooseDefault(tag) {
   state.groups.proxy = state.groups.proxy || {};
   state.groups.proxy.default = tag;
   setBusy(true);
-  setStatus(t("savingWithCheck"));
+  // 后端已改为「Clash API 热切 + 静默落盘」，不重启 sing-box（实测 20ms 级），
+  // 所以状态文案不再是「保存并重启」，也不在切换路径里做阻塞式全量测速——
+  // 那两次 loadProxyInfo(true) 每个节点一次 /delay，是 UI 卡顿的另一半原因。
+  setStatus(t("switchingProxy"));
   render();
   try {
     const result = await api("/api/proxy/default", {
@@ -2508,13 +2523,19 @@ async function chooseDefault(tag) {
     });
     state = result.state || state;
     maintenance = result.maintenance || maintenance;
-    if (result.proxyAfterProbe) applyProxyPayload({ proxy: result.proxyAfterProbe });
-    await loadProxyInfo(false);
+    // 后端回读确认过的运行态直接采用，无需再打一次 /api/proxy
+    if (result.proxyAfterProbe) applyProxyPayload({ proxy: { ok: true, data: result.proxyAfterProbe } });
     setDirty(false);
-    loadProxyInfo(true).then(() => render()).catch(() => {});
-    setStatus(t("savedAndRestarted"), "ok");
+    if (result.persistError) {
+      // 运行态已切成功，只是没落盘：必须明确告知，否则重启后会悄悄回到旧节点
+      setStatus(`${t("proxySwitched")} · ${t("persistFailed")}: ${result.persistError}`, "warn");
+    } else {
+      setStatus(t("proxySwitched"), "ok");
+    }
   } catch (error) {
     setStatus(`${t("proxySwitchFailed")}: ${error.message}`, "bad");
+    // 切换失败时回读真实运行态，避免 UI 停留在乐观更新的错误状态
+    loadProxyInfo(false).catch(() => {});
   } finally {
     setBusy(false);
     render();
@@ -3031,8 +3052,11 @@ function syncNodeSettingsFromForm() {
   state.groups.auto = state.groups.auto || {};
   state.groups.auto.url = $("autoUrl").value.trim();
   state.groups.auto.interval = $("autoInterval").value.trim();
-  // 官方版固定 idle_timeout 30m（空闲 30m 停止周期测速，有流量再恢复），不再配置 reF1nd 的 fallback/max_delay
-  state.groups.auto.idle_timeout = "30m";
+  // idle_timeout / tolerance 现在是用户可配项（官方默认 30m / 50ms）；空值回落默认，
+  // 合法性（Go 时长格式、idle_timeout >= interval）由后端 normalize_payload_groups 收口校验。
+  state.groups.auto.idle_timeout = $("autoIdleTimeout").value.trim() || "30m";
+  const toleranceRaw = $("autoTolerance").value.trim();
+  state.groups.auto.tolerance = toleranceRaw === "" ? 50 : Number(toleranceRaw);
   state.groups.auto.interrupt_exist_connections = $("interruptConnections").checked;
   state.groups.dns = state.groups.dns || {};
   state.groups.dns.local = $("localDnsSelect").value || "alidns";
@@ -3064,7 +3088,7 @@ function syncDraftSettings() {
   syncNodeSettingsFromForm();
 }
 
-["autoUrl", "autoInterval", "interruptConnections", "fakeipV4", "fakeipV6", "fakeipIpv6Enabled", "telegramCaptureIps", "socks5Port"].forEach((id) => {
+["autoUrl", "autoInterval", "autoTolerance", "autoIdleTimeout", "interruptConnections", "fakeipV4", "fakeipV6", "fakeipIpv6Enabled", "telegramCaptureIps", "socks5Port"].forEach((id) => {
   $(id).addEventListener("input", syncNodeSettingsChanged);
   $(id).addEventListener("change", syncNodeSettingsChanged);
 });

@@ -99,9 +99,20 @@
               <span data-i18n="autoInterval">Interval</span>
               <input id="autoInterval" type="text" autocomplete="off" placeholder="30s" />
             </label>
+            <label>
+              <!-- tolerance：候选节点要比当前快这么多毫秒才接替（官方 urltest.go Select 的防抖阈值）。
+                   0 表示只要更快就切，容易在延迟抖动时反复横跳。 -->
+              <span data-i18n="autoTolerance">Tolerance (ms)</span>
+              <input id="autoTolerance" type="number" min="0" step="10" autocomplete="off" placeholder="50" />
+            </label>
+            <label>
+              <!-- idle_timeout：空闲多久停止周期测速，必须 >= interval，否则 sing-box 拒绝启动
+                   （官方 urltest.go NewURLTestGroup 的运行期检查，sing-box check 抓不到）。 -->
+              <span data-i18n="autoIdleTimeout">Idle timeout</span>
+              <input id="autoIdleTimeout" type="text" autocomplete="off" placeholder="30m" />
+            </label>
             <div class="wide-field">
-              <span data-i18n="autoIdleTitle">Idle stop</span>
-              <p id="autoIdleNote" class="setting-note" data-i18n="autoIdleNote">Periodic testing stops after 30 minutes without traffic through the Auto group (idle_timeout 30m) and resumes on the next connection.</p>
+              <p id="autoIdleNote" class="setting-note" data-i18n="autoIdleNote">Periodic testing stops after the idle timeout without traffic through the Auto group, and resumes on the next connection.</p>
             </div>
             <label class="switch-field">
               <span data-i18n="interruptConnections">Interrupt old connections</span>
@@ -287,6 +298,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-autonote"></script>
+    <script src="/app.js?v=20260813-hotswitch"></script>
   </body>
 </html>

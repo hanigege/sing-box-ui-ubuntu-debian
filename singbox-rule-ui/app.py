@@ -87,6 +87,11 @@ LOCAL_DNS_CHOICES = {
 DEFAULT_LOCAL_DNS_CHOICE = "dnspod"
 LOCAL_DNS_BY_SERVER = {item["server"]: key for key, item in LOCAL_DNS_CHOICES.items()}
 DEFAULT_INTERRUPT_EXIST_CONNECTIONS = False
+# 官方 sing-box 的 urltest 默认值（constant/timeout.go DefaultURLTestIdleTimeout=30m、
+# protocol/group/urltest.go NewURLTestGroup 里 tolerance 缺省 50）。这里显式写出来，
+# 是为了让 UI 能展示并让用户调整，而不是把「官方默认」伪装成不可改的固定行为。
+DEFAULT_URLTEST_IDLE_TIMEOUT = "30m"
+DEFAULT_URLTEST_TOLERANCE = 50
 ENTRY_TYPES = ("domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr")
 LIST_ENTRY_TYPES = {
     "whitelist": ENTRY_TYPES,
@@ -433,6 +438,79 @@ def normalize_positive_number(value, default=None):
     return number
 
 
+# Go time.ParseDuration 允许的单位（sing-box 的 interval/idle_timeout 走这个解析器）。
+# 这里只支持 sing-box 实际有意义的量级：ns/us/ms 对测速间隔无意义但仍解析，避免误判用户输入非法。
+_DURATION_UNITS = {
+    "ns": 1e-9,
+    "us": 1e-6,
+    "µs": 1e-6,
+    "ms": 1e-3,
+    "s": 1.0,
+    "m": 60.0,
+    "h": 3600.0,
+}
+_DURATION_TOKEN_RE = re.compile(r"(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)")
+
+
+def parse_go_duration_seconds(value):
+    """把 Go 风格时长字符串（"30s"/"2m"/"1h30m"）解析成秒数。
+
+    sing-box 用 Go 的 time.ParseDuration，非法值会让 sing-box 启动失败，
+    但 `sing-box check` 只做静态校验、抓不到 interval > idle_timeout 这类
+    运行期约束（官方 urltest.go NewURLTestGroup 才返回错误），所以 UI 必须
+    自己解析并在保存前拦下来。返回 None 表示无法解析。
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    negative = text.startswith("-")
+    if negative or text.startswith("+"):
+        text = text[1:]
+    if not text:
+        return None
+    total = 0.0
+    pos = 0
+    matched = False
+    for match in _DURATION_TOKEN_RE.finditer(text):
+        if match.start() != pos:
+            return None  # 中间有无法识别的字符，整体判非法
+        total += float(match.group(1)) * _DURATION_UNITS[match.group(2)]
+        pos = match.end()
+        matched = True
+    if not matched or pos != len(text):
+        return None
+    return -total if negative else total
+
+
+def normalize_duration(value, default, field):
+    """校验 Go 时长字符串并原样返回（保留用户写法，如 "2m" 不改写成 "120s"）。"""
+    text = str(value if value not in ("", None) else default).strip()
+    seconds = parse_go_duration_seconds(text)
+    if seconds is None:
+        raise ValueError(f"Invalid duration for {field}: {value}")
+    if seconds <= 0:
+        raise ValueError(f"Duration for {field} must be positive: {value}")
+    return text
+
+
+def validate_urltest_timing(interval, idle_timeout):
+    """官方 sing-box protocol/group/urltest.go NewURLTestGroup:
+    `if interval > idle_timeout { return error }` —— 这是运行期检查，
+    `sing-box check` 返回 0 也可能启动失败，所以必须在保存前拦住。
+    """
+    interval_seconds = parse_go_duration_seconds(interval)
+    idle_seconds = parse_go_duration_seconds(idle_timeout)
+    if interval_seconds is None:
+        raise ValueError(f"Invalid duration for auto.interval: {interval}")
+    if idle_seconds is None:
+        raise ValueError(f"Invalid duration for auto.idle_timeout: {idle_timeout}")
+    if interval_seconds > idle_seconds:
+        raise ValueError(
+            f"auto.interval ({interval}) must be less or equal than auto.idle_timeout ({idle_timeout}); "
+            "sing-box refuses to start otherwise"
+        )
+
+
 def normalize_cidr(value, default=None, strict=False):
     cidr = str(value or "").strip()
     if not cidr:
@@ -774,7 +852,8 @@ def extract_initial_manager_data(config):
         "auto": {
             "url": (auto or {}).get("url", "https://www.gstatic.com/generate_204"),
             "interval": (auto or {}).get("interval", "30s"),
-            "idle_timeout": (auto or {}).get("idle_timeout", "30m"),
+            "idle_timeout": (auto or {}).get("idle_timeout", DEFAULT_URLTEST_IDLE_TIMEOUT),
+            "tolerance": (auto or {}).get("tolerance", DEFAULT_URLTEST_TOLERANCE),
             "interrupt_exist_connections": (auto or {}).get("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS),
         },
         "direct": direct or {"type": "direct", "tag": "direct"},
@@ -836,7 +915,10 @@ def load_groups():
     groups["auto"].setdefault("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS)
     # urltest 默认只影响新连接；需要快速脱离坏节点时，用户可以手动开启中断旧连接。
     groups["auto"]["interrupt_exist_connections"] = normalize_bool(groups["auto"]["interrupt_exist_connections"])
-    groups["auto"].setdefault("idle_timeout", "30m")
+    # idle_timeout / tolerance 与官方默认值一致（constant/timeout.go DefaultURLTestIdleTimeout=30m、
+    # urltest.go NewURLTestGroup tolerance=50），但都是用户可调项，不是写死的行为。
+    groups["auto"].setdefault("idle_timeout", DEFAULT_URLTEST_IDLE_TIMEOUT)
+    groups["auto"].setdefault("tolerance", DEFAULT_URLTEST_TOLERANCE)
     groups["fakeip"].setdefault("tag", "fakeip-dns")
     groups["fakeip"].setdefault("inet4_range", "28.0.0.0/8")
     groups["fakeip"].setdefault("inet6_range", "2001:2::/64")
@@ -912,14 +994,22 @@ def render_config(nodes=None, groups=None, rule_dir=RULE_DIR, normalized_lists=N
         "outbounds": preferred_auto_outbounds(tags, groups),
         "url": groups.get("auto", {}).get("url", "https://www.gstatic.com/generate_204"),
         "interval": groups.get("auto", {}).get("interval", "30s"),
+        # tolerance：候选节点必须比当前节点快这么多毫秒才接替（官方 urltest.go Select 里
+        # `minDelay > history.Delay+g.tolerance`），是防抖阈值——真正的节点切换判据。
+        "tolerance": normalize_non_negative_number(
+            groups.get("auto", {}).get("tolerance", DEFAULT_URLTEST_TOLERANCE), DEFAULT_URLTEST_TOLERANCE
+        ),
         # 官方 sing-box urltest：idle_timeout 到点后停止周期测速（有流量再恢复），
-        # 不是 reF1nd fallback 的等价物；节点切换由 interval + tolerance(默认 50ms) 决定
-        "idle_timeout": groups.get("auto", {}).get("idle_timeout", "30m"),
+        # 不是 reF1nd fallback 的等价物；节点切换由 interval + tolerance 决定
+        "idle_timeout": groups.get("auto", {}).get("idle_timeout", DEFAULT_URLTEST_IDLE_TIMEOUT),
         # 默认只影响新连接；如果用户开启高级开关，则允许切换时主动清理旧连接。
         "interrupt_exist_connections": normalize_bool(
             groups.get("auto", {}).get("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS)
         ),
     }
+    # interval > idle_timeout 时官方 NewURLTestGroup 直接返回错误（sing-box 起不来），
+    # 而 `sing-box check` 是静态校验抓不到——渲染时就拦住，避免落盘一个起不来的配置。
+    validate_urltest_timing(auto["interval"], auto["idle_timeout"])
     direct = groups.get("direct") or {"type": "direct", "tag": "direct"}
     block = groups.get("block") or {"type": "block", "tag": "block"}
     config["outbounds"] = [proxy, auto, *[node["outbound"] for node in nodes if node.get("enabled", True)], direct, block]
@@ -3111,7 +3201,9 @@ def set_proxy_now(tag):
     return clash_api_request("/proxies/Proxy", method="PUT", payload={"name": tag})
 
 
-def set_proxy_now_checked(tag, attempts=8, delay=0.5):
+def set_proxy_now_checked(tag, attempts=6, delay=0.15):
+    # Clash API 热切实测 15~22ms，回读通常首次就对齐；attempts×delay 只是容错上限
+    # （原 8×0.5s=4s 是为了等 sing-box 重启完成，现在不再重启，无需等那么久）。
     last_result = None
     for _ in range(attempts):
         last_result = set_proxy_now(tag)
@@ -3365,7 +3457,21 @@ def normalize_payload_groups(raw_groups, nodes=None):
         auto = raw_groups.get("auto")
         if isinstance(auto, dict):
             groups["auto"]["url"] = normalize_url(auto.get("url", groups["auto"]["url"]), groups["auto"]["url"])
-            groups["auto"]["interval"] = str(auto.get("interval", groups["auto"]["interval"])).strip() or groups["auto"]["interval"]
+            # interval / idle_timeout 是 Go 时长字符串，非法值会让 sing-box 起不来而
+            # check 抓不到，必须在这里解析校验（保留用户写法，不改写单位）。
+            groups["auto"]["interval"] = normalize_duration(
+                auto.get("interval", groups["auto"]["interval"]), groups["auto"]["interval"], "auto.interval"
+            )
+            groups["auto"]["idle_timeout"] = normalize_duration(
+                auto.get("idle_timeout", groups["auto"].get("idle_timeout", DEFAULT_URLTEST_IDLE_TIMEOUT)),
+                groups["auto"].get("idle_timeout", DEFAULT_URLTEST_IDLE_TIMEOUT),
+                "auto.idle_timeout",
+            )
+            validate_urltest_timing(groups["auto"]["interval"], groups["auto"]["idle_timeout"])
+            groups["auto"]["tolerance"] = normalize_non_negative_number(
+                auto.get("tolerance", groups["auto"].get("tolerance", DEFAULT_URLTEST_TOLERANCE)),
+                DEFAULT_URLTEST_TOLERANCE,
+            )
             preferred = str(auto.get("preferred", groups["auto"].get("preferred", ""))).strip()
             if preferred in tags:
                 groups["auto"]["preferred"] = preferred
@@ -3374,11 +3480,9 @@ def normalize_payload_groups(raw_groups, nodes=None):
             groups["auto"]["interrupt_exist_connections"] = normalize_bool(
                 auto.get("interrupt_exist_connections", groups["auto"].get("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS))
             )
-            fb = auto.get("fallback", groups["auto"].get("fallback", None))
-            if fb is not None and isinstance(fb, dict):
-                groups["auto"]["fallback"] = fb
-            else:
-                groups["auto"]["fallback"] = None
+            # fallback 是 reF1nd fork 的字段，官方版渲染层已不读取。保存时顺手清掉，
+            # 避免它作为脏字段永久留在 groups.json 里误导后续维护（官方版 check 也不认）。
+            groups["auto"].pop("fallback", None)
         fakeip = raw_groups.get("fakeip")
         if isinstance(fakeip, dict):
             groups["fakeip"]["inet4_range"] = normalize_cidr(
@@ -3482,64 +3586,65 @@ def apply_all(normalized_lists, nodes, groups):
 
 
 def apply_proxy_default(tag):
+    """切换默认节点：热切运行态 + 静默持久化，不重启 sing-box。
+
+    为什么不重启（2026-08-13 实测确立）：
+      - selector 的 `default` 字段只决定 sing-box **启动时**的初值，运行态选择由
+        Clash API 掌管（PUT /proxies/Proxy 实测 15~22ms，连接不断）。
+      - 离线渲染对比证明：只改 groups.proxy.default 时，config.json 的差异
+        仅 `/outbounds/[0]/default` 一个字段，不影响入站、DNS、路由、rule_set。
+      - sync_tproxy 依赖节点 IP 与灰名单，与 proxy.default 无关，因此也不必跑。
+    旧实现走 staged_check → apply_all → restart_sing_box → sync_tproxy →
+    set_proxy_now_checked(4s 轮询) → test_node_delay(8s)，导致每次点节点全网瞬断
+    且 UI 卡十几秒，这是「切换不丝滑」的根因。
+
+    顺序：先热切（用户立刻生效）→ 再落盘（下次启动保持）。落盘失败不回滚运行态，
+    因为运行态已经是用户要的结果；只把 persistError 报给前端，避免「看起来失败了
+    其实已经切过去」的割裂感。
+    """
     nodes = load_nodes()
     tags = {"Auto", *enabled_node_tags(nodes)}
     if tag not in tags:
         raise ValueError(f"Unknown proxy default: {tag}")
-    groups = load_groups()
-    groups.setdefault("proxy", {})
-    groups["proxy"]["default"] = tag
-    normalized_lists = {name: read_entries(name) for name in LISTS}
-    check = staged_check(normalized_lists, nodes=nodes, groups=groups)
-    if check["code"] != 0:
-        return {"ok": False, "error": "Config check failed. Default proxy was not saved.", "check": check, "state": load_state()}
-    result = apply_all(normalized_lists, nodes, groups)
-    restart = restart_sing_box()
-    rollback = None
-    if restart["code"] != 0 or service_status() != "active":
-        rollback_apply(result)
-        rollback_restart = restart_sing_box()
-        rollback = {"restart": rollback_restart, "service": service_status()}
-        return {
-            "ok": False,
-            "error": "Restart failed. Previous config was restored.",
-            "check": check,
-            "saved": result,
-            "restart": restart,
-            "rollback": rollback,
-            "state": load_state(),
-        }
-    tproxy_sync = sync_tproxy(nodes=nodes, groups=groups, normalized_lists=normalized_lists)
-    # 默认节点关系到真实出站路径，不能只写配置或只切运行态；保存后必须校验 Clash API 的当前选择已经对齐。
+
+    # 1) 运行态热切，并回读确认（Clash API 的 PUT 成功不等于 now 已刷新）
     proxy = set_proxy_now_checked(tag)
-    # sing-box 重启后 Auto 的 now/history 可能短暂为空，主动触发一次测速，避免 UI 新增节点后看不到 Auto 当前判断。
-    auto_probe = test_node_delay("Auto", timeout_ms=8000) if "Auto" in tags else None
-    proxy_after_probe = get_proxy_state()
     if not proxy["ok"]:
         return {
             "ok": False,
             "error": proxy.get("error") or "Runtime proxy switch failed.",
-            "check": check,
-            "saved": result,
-            "restart": restart,
-            "rollback": rollback,
-            "tproxySync": tproxy_sync,
             "proxy": proxy,
-            "autoProbe": auto_probe,
-            "maintenance": maintenance_status(),
+            "restarted": False,
             "state": load_state(),
         }
+
+    # 2) 静默持久化 groups.json + config.json，供下次启动使用。
+    #    仍然先 staged_check：绝不把一个 check 不过的 config 落到正式路径。
+    persist_error = None
+    check = None
+    saved = None
+    groups = load_groups()
+    groups.setdefault("proxy", {})
+    groups["proxy"]["default"] = tag
+    normalized_lists = {name: read_entries(name) for name in LISTS}
+    try:
+        check = staged_check(normalized_lists, nodes=nodes, groups=groups)
+        if check["code"] != 0:
+            persist_error = "Config check failed. Runtime switched but default was not saved."
+        else:
+            saved = apply_all(normalized_lists, nodes, groups)
+    except Exception as exc:  # 落盘异常不能影响已生效的运行态切换
+        persist_error = f"Persist failed: {exc}"
+
     return {
         "ok": True,
         "error": "",
+        "persistError": persist_error,
         "check": check,
-        "saved": result,
-        "restart": restart,
-        "rollback": rollback,
-        "tproxySync": tproxy_sync,
+        "saved": saved,
+        "restarted": False,
         "proxy": proxy,
-        "autoProbe": auto_probe,
-        "proxyAfterProbe": proxy_after_probe,
+        "proxyAfterProbe": proxy.get("data"),
         "maintenance": maintenance_status(),
         "state": load_state(),
     }
