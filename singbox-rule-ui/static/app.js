@@ -237,6 +237,7 @@ const translations = {
     autoInterval: "Interval",
     autoFallbackProtect: "Fallback protection",
     autoFallbackNote: "Official sing-box: idle_timeout 30m auto re-test after idle.",
+    nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
     localDnsNote: "Choose one local-dns upstream. sing-box does not run these in parallel.",
@@ -563,6 +564,7 @@ const translations = {
     autoInterval: "检测间隔",
     autoFallbackProtect: "回退保护",
     autoFallbackNote: "官方 sing-box：空闲 30m 后自动重新测速（idle_timeout 30m）。",
+    nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
@@ -2442,6 +2444,14 @@ function syncNodeTransportControls() {
   if (!isVless) {
     $("nodeTransportMode").value = "brutal";
   }
+  // AEAD-2022 时钟提示：只在 SS 且加密选了 2022-blake3-* 时显示。
+  // 普通 SS 加密(chacha20/aes-gcm)没有防重放时间窗，提示会变噪音。
+  const note = $("nodeClockNote");
+  if (note) {
+    const method = ($("nodeMethod").value || "").trim().toLowerCase();
+    const needsClockSync = isSs && method.startsWith("2022-blake3");
+    note.classList.toggle("hidden", !needsClockSync);
+  }
 }
 
 function selectNode(tag) {
@@ -2974,6 +2984,9 @@ $("nodeTransportMode").addEventListener("change", () => {
   syncNodeTransportControls();
   syncNodeFormState();
 });
+// method 是自由文本输入，AEAD-2022 时钟提示要随用户敲字实时显隐，
+// 故单独挂 input 监听（nodeForm 的委托监听只负责脏状态，不刷控件可用性）。
+$("nodeMethod").addEventListener("input", syncNodeTransportControls);
 $("nodeCancel").addEventListener("click", clearNodeForm);
 $("searchInput").addEventListener("input", render);
 $("typeInput").addEventListener("change", updateValueHint);

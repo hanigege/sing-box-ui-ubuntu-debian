@@ -191,6 +191,11 @@
             <input id="nodeMethod" type="text" autocomplete="off" placeholder="method (chacha20-ietf-poly1305)" />
             <input id="nodePlugin" type="text" autocomplete="off" placeholder="plugin (v2ray-plugin)" />
             <input id="nodePluginOpts" type="text" autocomplete="off" placeholder="plugin_opts (mode=websocket;tls;host=...;path=/jgaga)" />
+            <!-- AEAD-2022 时钟提示：2022-blake3-* 加密有 30 秒防重放窗口，两端时钟差超限会被
+                 服务端直接拒连，症状是「节点能连但 0 B/s」，极难自查。安装器刻意不代管系统
+                 NTP（详见 install.sh 注释），所以在这里提示用户自行保证时钟同步。
+                 显隐由 app.js syncNodeTransportControls() 按 method 是否 2022-blake3 控制。 -->
+            <p id="nodeClockNote" class="setting-note hidden" data-i18n="nodeClockNote">2022-blake3 encryption requires the gateway and server clocks to be within 30 seconds, otherwise the node connects but transfers 0 B/s. Keep NTP running on this host.</p>
             <input id="nodeSni" type="text" autocomplete="off" placeholder="tls server_name" />
             <input id="nodeObfs" type="text" autocomplete="off" placeholder="obfs password" />
             <input id="nodePublicKey" type="text" autocomplete="off" placeholder="reality public_key" />
@@ -282,6 +287,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-official"></script>
+    <script src="/app.js?v=20260813-clocknote"></script>
   </body>
 </html>

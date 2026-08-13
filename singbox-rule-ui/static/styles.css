@@ -702,6 +702,17 @@ button[data-i18n="updateRules"] {
   grid-column: 1 / -1;
 }
 
+/* 节点表单里的说明文字（如 AEAD-2022 时钟提示）必须横跨整行：
+   .node-form 是 auto-fit 多列 grid，不设 grid-column 会被压成 ~178px 的窄长条，
+   长句折成十几行没法读。样式对齐 .checkline 的 1 / -1 处理。 */
+.node-form .setting-note {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* 节点卡片 */
 .node-rows {
   display: flex;
