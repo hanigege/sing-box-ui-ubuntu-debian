@@ -285,17 +285,25 @@ fetch_one() {
     echo "optional ${subdir}/${name}.srs unavailable; skipped safely"
     return 0
   fi
-  for mirror in "${SELECTED_MIRRORS[@]}"; do
-    for source in "metacubex"; do
-      url="$(source_url "$mirror" "$source" "$subdir" "$name")"
-      if curl_rule_file "$url" "$tmp" "$TMP_DIR/curl-${subdir}-${name}.log"; then
-        if [ -s "$tmp" ] && [ "$(wc -c < "$tmp")" -gt 16 ]; then
-          echo "downloaded ${subdir}/${name}.srs via ${source} ${mirror}"
-          UPDATED_FILES+=("$subdir/$name.srs:$tmp")
-          return 0
+  for attempt in 1 2; do
+    for mirror in "${SELECTED_MIRRORS[@]}"; do
+      for source in "metacubex"; do
+        url="$(source_url "$mirror" "$source" "$subdir" "$name")"
+        if curl_rule_file "$url" "$tmp" "$TMP_DIR/curl-${subdir}-${name}.log"; then
+          if [ -s "$tmp" ] && [ "$(wc -c < "$tmp")" -gt 16 ]; then
+            echo "downloaded ${subdir}/${name}.srs via ${source} ${mirror}"
+            UPDATED_FILES+=("$subdir/$name.srs:$tmp")
+            return 0
+          fi
         fi
-      fi
+      done
     done
+    # 单个规则文件瞬时下载失败（镜像抖动/超时）先重试一轮再放弃；
+    # 与「先落盘再判 fail」配套，避免新装时因一次抖动整批规则缺失。
+    if [ "$attempt" -eq 1 ]; then
+      echo "WARN: retrying ${subdir}/${name}.srs after transient download failure" >&2
+      sleep 1
+    fi
   done
   if [ -s "$current" ]; then
     echo "WARN: update failed for ${subdir}/${name}.srs; keeping existing file" >&2
@@ -408,10 +416,9 @@ done
 for name in "${GEOIP_REQUIRED[@]}"; do
   fetch_one "geoip" "$name" 1 || fail=1
 done
-if [ "$fail" -ne 0 ]; then
-  exit "$fail"
-fi
 
+# 先落盘所有已成功下载的文件，再判失败：单个文件瞬时下载失败时，
+# 已下载的其余文件不能整批丢弃（曾致新装 rules 目录全空、sing-box 起不来）。
 RESTORE_FILES=()
 for entry in "${UPDATED_FILES[@]}"; do
   rel="${entry%%:*}"
@@ -425,6 +432,14 @@ for entry in "${UPDATED_FILES[@]}"; do
   RESTORE_FILES+=("$rel")
   echo "installed $rel"
 done
+
+if [ "$fail" -ne 0 ]; then
+  # 部分规则下载失败：已成功文件已落盘，缺失文件由 cron 重试补齐；
+  # 这里不强行 check/restart（缺文件时 check 必败且回滚会误删已装文件），
+  # 安装流程（install.sh 里 `|| true`）照常继续，verify 阶段会报缺哪些。
+  echo "WARN: some rule files failed to download; installed ${#UPDATED_FILES[@]} file(s), missing files will be retried by cron" >&2
+  exit "$fail"
+fi
 
 update_telegram_cidr_file
 
