@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SING_BOX_BUNDLED_VERSION="${SING_BOX_BUNDLED_VERSION:-1.14.0-alpha.48-reF1nd}"
+SING_BOX_BUNDLED_VERSION="${SING_BOX_BUNDLED_VERSION:-1.13.18}"
 SING_BOX_ARCH="${SING_BOX_ARCH:-auto}"
 INSTALL_DIR="/opt/singbox-rule-ui"
 CONFIG_DIR="/etc/sing-box"
@@ -165,7 +165,7 @@ detect_arch() {
   fi
   case "$arch" in
     x86_64|amd64) echo "amd64" ;;
-    aarch64|arm64) echo "Unsupported architecture: $arch — reF1nd binary only available for amd64. See third_party/sing-box/ for available builds." >&2; exit 1 ;;
+    aarch64|arm64) echo "arm64" ;;
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
   esac
 }
@@ -180,9 +180,9 @@ install_sing_box() {
   local arch singbox_dir binary tmp current_version backup
   arch="$(detect_arch)"
   singbox_dir="$PROJECT_DIR/third_party/sing-box/v${SING_BOX_BUNDLED_VERSION}"
-  binary="$singbox_dir/sing-box-ref1nd-linux-${arch}"
+  binary="$singbox_dir/sing-box-official-linux-${arch}"
   if [ ! -r "$binary" ]; then
-    echo "Bundled reF1nd sing-box binary not found: $binary" >&2
+    echo "Bundled sing-box binary not found: $binary" >&2
     exit 1
   fi
   tmp="$(mktemp -d)"
@@ -203,7 +203,7 @@ install_sing_box() {
   else
     state_set sing_box_binary installed
   fi
-  echo "Installing bundled reF1nd sing-box ${SING_BOX_BUNDLED_VERSION} (${arch})"
+  echo "Installing bundled sing-box ${SING_BOX_BUNDLED_VERSION} (${arch})"
   install -m 0755 "$binary" /usr/local/bin/sing-box
   state_set sing_box_bundled_version "$SING_BOX_BUNDLED_VERSION"
 }

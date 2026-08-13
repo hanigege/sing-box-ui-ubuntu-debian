@@ -1,11 +1,11 @@
-# sing-box-reF1nd 魔改版（Ubuntu / Debian · systemd 版）
+# sing-box 官方版（Ubuntu / Debian · systemd 版）
 
 本仓库是 [singbox-ui-alpine](https://github.com/hanigege/singbox-ui-alpine)（Alpine/OpenRC 版）向 **Ubuntu / Debian + systemd** 的移植版本。核心渲染逻辑、Rule UI、TProxy、回滚校验机制完全一致，只把服务层从 OpenRC 换成 systemd、包管理从 apk 换成 apt，并处理了 Ubuntu/Debian 上 systemd-resolved 占用 53 端口的问题。
 
 ## 功能
 
 - 一键安装 `sing-box` 二进制、systemd 服务、TProxy、cron 定时任务和 Web UI
-- 默认使用仓库内置并校验过的 reF1nd 增强版 `sing-box v1.14.0-alpha.48-reF1nd` 静态二进制（`amd64`）
+- 默认使用仓库内置并校验过的官方 `sing-box v1.13.18` 静态二进制（自动检测 `amd64` / `arm64`）
 - 9091 规则 UI 管理白名单、黑名单、灰名单、DDNS、代理节点、实时连接、日志和运行规则
 - 保存前执行 `sing-box check`，失败不覆盖正式配置；规则和主配置使用原子替换
 - 重启失败自动回滚上一份可用配置，优先保证正在运行的 `sing-box` 可恢复
@@ -24,11 +24,11 @@
 
 - Ubuntu 22.04 / 24.04 / 25.04 及衍生版
 - Debian 11 / 12 及衍生版
-- `x86_64/amd64`（仓库内置 reF1nd 二进制仅提供 amd64）
+- `x86_64/amd64` / `aarch64/arm64`（安装器按 `uname -m` 自动选择）
 
 需要 root 权限，且系统以 systemd 作为 init。Alpine/OpenRC 环境请使用原版仓库 [singbox-ui-alpine](https://github.com/hanigege/singbox-ui-alpine)。
 
-## reF1nd 魔改版 一键安装 {v1.14.0-alpha.48-reF1nd}
+## 官方版 一键安装 {官方 sing-box v1.13.18}
 
 提供两个并行的安装入口，按网络环境选一个即可。两个入口走不同的安装脚本，最终效果一致：
 
@@ -59,7 +59,7 @@ curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/hanigege/sing-
 
 密码不合规（少于 6 位或含空格）时自动回退为随机 token 并打印告警。已装好的机器不需要重装：直接登录 9091 → 维护页 → 「修改访问密码」即可随时更换；覆盖安装永远不会重置现有密码。
 
-安装器自动安装 apt 依赖：`curl`、`ca-certificates`、`tar`、`gzip`、`python3`、`nftables`、`iproute2`、`rsync`、`util-linux`、`coreutils`、`cron`、`logrotate`、`iputils-ping`。仓库内置的 `sing-box` 是 reF1nd 增强版 `v1.14.0-alpha.48-reF1nd` 静态二进制。卸载时默认保留 apt 包，避免连带移除系统基础依赖。
+安装器自动安装 apt 依赖：`curl`、`ca-certificates`、`tar`、`gzip`、`python3`、`nftables`、`iproute2`、`rsync`、`util-linux`、`coreutils`、`cron`、`logrotate`、`iputils-ping`。仓库内置的 `sing-box` 是官方版 `v1.13.18` 静态二进制（amd64/arm64 双架构，安装器自动检测）。卸载时默认保留 apt 包，避免连带移除系统基础依赖。
 
 如果安装在 Proxmox VE 的 Ubuntu/Debian LXC 里，一键安装只负责容器内的 sing-box、TProxy、systemd 服务和 Rule UI，不会改 PVE 宿主机配置。高并发或高带宽场景建议安装后继续看下面的“Proxmox VE / LXC 可选优化”。
 

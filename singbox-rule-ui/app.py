@@ -3273,7 +3273,7 @@ def current_proxy_payload(test_delays=False):
 
 
 def current_proxy_payload_with_history_alignment():
-    # 方案C: 前端不再触发 fallback/auto-align，交给 reF1nd fork 引擎层处理
+    # 前端展示延时走 read_delay_history（Clash API history），不主动触发 fallback/auto-align
     delays = get_node_delays(test=False)
     return {"proxy": get_proxy_state(), "delays": delays}
 
