@@ -43,7 +43,6 @@ const translations = {
     service: "Service",
     memory: "Memory",
     updated: "System time",
-    ruleDir: "Config dir",
     singBoxVersion: "sing-box",
     nodes: "Nodes",
     nodesNote: "Managed outbounds",
@@ -370,7 +369,6 @@ const translations = {
     service: "服务",
     memory: "内存",
     updated: "系统时间",
-    ruleDir: "配置目录",
     singBoxVersion: "sing-box",
     nodes: "节点",
     nodesNote: "受管理的出站节点",
@@ -1012,11 +1010,8 @@ function renderMeta() {
   const versionPill = document.createElement("span");
   versionPill.className = "meta-pill version-pill";
   versionPill.textContent = `${t("singBoxVersion")}: ${state.meta?.singBoxVersion || "unknown"}`;
-  const ruleDir = document.createElement("span");
-  ruleDir.className = "meta-pill rule-dir-pill";
-  const configDir = state.meta?.configPath ? state.meta.configPath.replace(/\/[^/]+$/, "") : "";
-  ruleDir.textContent = `${t("ruleDir")}: ${configDir || state.meta.ruleDir || ""}`;
-  $("meta").append(service, memoryPill, versionPill, ruleDir);
+  // 配置目录对用户无操作价值（路径固定为 /etc/sing-box），移除该 pill 收敛顶栏信息量
+  $("meta").append(service, memoryPill, versionPill);
   if (metaUpdatedAt) {
     const updated = document.createElement("span");
     updated.className = "meta-pill meta-updated time-pill";

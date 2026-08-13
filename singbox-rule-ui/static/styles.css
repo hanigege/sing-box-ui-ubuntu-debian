@@ -1055,8 +1055,7 @@ button[data-i18n="updateRules"] {
   font-variant-numeric: tabular-nums;
 }
 
-.runtime-type-pill,
-.rule-dir-pill {
+.runtime-type-pill {
   display: inline-flex;
   padding: 2px 8px;
   border-radius: 999px;
