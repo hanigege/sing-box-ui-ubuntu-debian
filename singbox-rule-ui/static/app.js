@@ -574,7 +574,7 @@ const translations = {
     autoIdleNote: "空闲停测：Auto 组连续这么久没有流量经过时停止周期测速，下次有连接自动恢复——只省资源，不影响选路。切换容差是防抖阈值：候选节点要比当前节点快这么多毫秒才会接替，设 0 会在延迟抖动时反复横跳。空闲停测必须不小于检测间隔，否则 sing-box 拒绝启动。",
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     nodeSsFormatNote: "Shadowsocks 填写格式：加密方式选 2022-blake3-aes-256-gcm 时，密码必须是 `ssservice genkey -m 2022-blake3-aes-256-gcm` 生成的 44 字符 base64 key（不能填普通字符串密码）。WS 伪装版：插件填 v2ray-plugin，插件参数填 mode=websocket;tls;host=你的域名;path=/你的暗号。这两项必填——插件留空保存会被静默删掉，节点会退回直连而连不上。",
-    nodeSocksNote: "SOCKS5 本地中转：填本机 sslocal/ss-local 等程序的 socks5 监听地址和端口（例如 server=127.0.0.1、端口=10010），无需密码/加密。典型用途：sing-box 的 shadowsocks + v2ray-plugin（SIP003）间歇性断流（下载 0-13MB/s 且中途中断）时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口，可恢复满速（实测稳定 78-114Mbps）。",
+    nodeSocksNote: "SOCKS5 本地中转：填本机 sslocal/ss-local 等程序的 socks5 监听地址和端口（例如 server=127.0.0.1、端口=10010），无需密码/加密。典型用途：sing-box 的 shadowsocks + v2ray-plugin（SIP003）间歇性断流（下载 0-13MB/s 且中途中断）时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口，可恢复满速。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
