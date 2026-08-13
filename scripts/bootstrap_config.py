@@ -120,6 +120,20 @@ def template_nodes():
                 "plugin_opts": "mode=websocket;tls;host=example.com;path=/jgagb",
             },
         },
+        {
+            # SOCKS5 本地中转样例（2026-08-13 新增）。
+            # 指向本机 sslocal/ss-local 等程序的 socks5 入口（127.0.0.1:10010），
+            # 无密码/加密/传输层字段。典型用途：sing-box 的 shadowsocks + SIP003 plugin
+            # 间歇性断流时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口提速。
+            # 装好后替换 server_port 为你实际监听的端口即可。
+            "enabled": True,
+            "outbound": {
+                "type": "socks",
+                "tag": "TEMPLATE-SOCKS-LOCAL",
+                "server": "127.0.0.1",
+                "server_port": 10010,
+            },
+        },
     ]
 
 
@@ -134,7 +148,7 @@ def initial_nodes_from_file():
         if not isinstance(node, dict) or not isinstance(node.get("outbound"), dict):
             raise ValueError(f"Node {index} is missing outbound")
         outbound = node["outbound"]
-        if not outbound.get("tag") or outbound.get("type") not in {"hysteria2", "vless", "shadowsocks"}:
+        if not outbound.get("tag") or outbound.get("type") not in {"hysteria2", "vless", "shadowsocks", "socks"}:
             raise ValueError(f"Node {index} must have a supported outbound type and tag")
         node.setdefault("enabled", True)
     return data

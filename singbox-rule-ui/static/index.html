@@ -190,6 +190,7 @@
               <option value="hysteria2">Hysteria2</option>
               <option value="vless">VLESS Reality</option>
               <option value="shadowsocks">Shadowsocks</option>
+              <option value="socks">SOCKS5 本地中转</option>
             </select>
             <select id="nodeTransportMode" aria-label="VLESS transport mode">
               <option value="bbr">System BBR / TCP</option>
@@ -212,6 +213,7 @@
                  标准填法，避免用户保存时字段留空被删（UI 保存逻辑对空 plugin 直接 delete）。
                  显隐由 app.js syncNodeTransportControls() 按 nodeType 控制。 -->
             <p id="nodeSsFormatNote" class="setting-note hidden" data-i18n="nodeSsFormatNote">Shadowsocks fill-in guide: method 2022-blake3-aes-256-gcm requires a 44-char base64 key from `ssservice genkey` (not a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH — both fields are required, leaving them empty removes the disguise and the node breaks.</p>
+            <p id="nodeSocksNote" class="setting-note hidden" data-i18n="nodeSocksNote">SOCKS5 local relay: point to a local socks5 entry (sslocal/ss-local/Dante) on 127.0.0.1, e.g. server=127.0.0.1 port=10010. No password/encryption needed. Typical use: shadowsocks + SIP003 plugin in sing-box intermittently stalls (0-13MB/s, downloads cut off); running the official sslocal client locally and routing sing-box through it restores full speed.</p>
             <input id="nodeSni" type="text" autocomplete="off" placeholder="tls server_name" />
             <input id="nodeObfs" type="text" autocomplete="off" placeholder="obfs password" />
             <input id="nodePublicKey" type="text" autocomplete="off" placeholder="reality public_key" />
@@ -303,6 +305,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-ssformatnote"></script>
+    <script src="/app.js?v=20260813-socksnode"></script>
   </body>
 </html>

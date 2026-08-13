@@ -242,6 +242,7 @@ const translations = {
     autoIdleNote: "Idle timeout: once no traffic goes through the Auto group for this long, periodic testing stops and resumes automatically on the next connection \u2014 resource saving only, it does not affect node selection. Tolerance is the anti-flapping threshold: a candidate must be at least this many ms faster to take over. Idle timeout must be greater than or equal to the interval, otherwise sing-box refuses to start.",
     nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
     nodeSsFormatNote: "Shadowsocks fill-in: method 2022-blake3-aes-256-gcm needs a 44-char base64 key from `ssservice genkey` (NOT a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH. Both fields are required — leaving plugin empty silently removes the disguise (node breaks).",
+    nodeSocksNote: "SOCKS5 local relay: point to a local socks5 entry (sslocal/ss-local/Dante) on 127.0.0.1, e.g. server=127.0.0.1 port=10010. No password/encryption needed. Typical use: shadowsocks + SIP003 plugin in sing-box intermittently stalls (0-13MB/s, downloads cut off); running the official sslocal client locally and routing sing-box through it restores full speed.",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
     localDnsNote: "Choose one local-dns upstream. sing-box does not run these in parallel.",
@@ -573,6 +574,7 @@ const translations = {
     autoIdleNote: "空闲停测：Auto 组连续这么久没有流量经过时停止周期测速，下次有连接自动恢复——只省资源，不影响选路。切换容差是防抖阈值：候选节点要比当前节点快这么多毫秒才会接替，设 0 会在延迟抖动时反复横跳。空闲停测必须不小于检测间隔，否则 sing-box 拒绝启动。",
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     nodeSsFormatNote: "Shadowsocks 填写格式：加密方式选 2022-blake3-aes-256-gcm 时，密码必须是 `ssservice genkey -m 2022-blake3-aes-256-gcm` 生成的 44 字符 base64 key（不能填普通字符串密码）。WS 伪装版：插件填 v2ray-plugin，插件参数填 mode=websocket;tls;host=你的域名;path=/你的暗号。这两项必填——插件留空保存会被静默删掉，节点会退回直连而连不上。",
+    nodeSocksNote: "SOCKS5 本地中转：填本机 sslocal/ss-local 等程序的 socks5 监听地址和端口（例如 server=127.0.0.1、端口=10010），无需密码/加密。典型用途：sing-box 的 shadowsocks + v2ray-plugin（SIP003）间歇性断流（下载 0-13MB/s 且中途中断）时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口，可恢复满速（实测稳定 78-114Mbps）。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
@@ -2447,13 +2449,21 @@ function nodeFormChanged() {
 function syncNodeTransportControls() {
   const isVless = $("nodeType").value === "vless";
   const isSs = $("nodeType").value === "shadowsocks";
+  const isSocks = $("nodeType").value === "socks";
   const isBrutal = $("nodeTransportMode").value === "brutal";
   $("nodeTransportMode").disabled = !isVless;
-  $("nodeUp").disabled = (isVless && !isBrutal) || isSs;
-  $("nodeDown").disabled = (isVless && !isBrutal) || isSs;
+  $("nodeUp").disabled = (isVless && !isBrutal) || isSs || isSocks;
+  $("nodeDown").disabled = (isVless && !isBrutal) || isSs || isSocks;
   if (!isVless) {
     $("nodeTransportMode").value = "brutal";
   }
+  // SOCKS5 本地中转：只填 tag/server/port，其余字段（密码/加密/插件/TLS/obfs）全部禁用，
+  // 避免用户误填后被 buildNodeFromForm 静默丢弃（socks 出站没有这些字段）。
+  const socksOnly = ["nodeSecret", "nodeMethod", "nodePlugin", "nodePluginOpts", "nodeSni", "nodeObfs", "nodePublicKey", "nodeShortId", "nodeInsecure"];
+  socksOnly.forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = isSocks;
+  });
   // AEAD-2022 时钟提示：只在 SS 且加密选了 2022-blake3-* 时显示。
   // 普通 SS 加密(chacha20/aes-gcm)没有防重放时间窗，提示会变噪音。
   const note = $("nodeClockNote");
@@ -2467,6 +2477,12 @@ function syncNodeTransportControls() {
   const ssNote = $("nodeSsFormatNote");
   if (ssNote) {
     ssNote.classList.toggle("hidden", !isSs);
+  }
+  // SOCKS5 本地中转提示：只要节点类型是 socks 就显示，说明这是 sslocal relay 方案
+  // （sing-box 的 shadowsocks+SIP003 插件断流时，用本机 sslocal 中转恢复满速）。
+  const socksNote = $("nodeSocksNote");
+  if (socksNote) {
+    socksNote.classList.toggle("hidden", !isSocks);
   }
 }
 
@@ -2667,6 +2683,21 @@ function buildNodeFromForm() {
     else delete outbound.plugin;
     if (pluginOpts) outbound.plugin_opts = pluginOpts;
     else delete outbound.plugin_opts;
+  } else if (type === "socks") {
+    // SOCKS5 本地中转（指向本机 sslocal/ss-local 的 socks5 入口）：
+    // 无密码/加密/插件/TLS/obfs/复用字段，只保留 server/server_port。
+    delete outbound.uuid;
+    delete outbound.password;
+    delete outbound.method;
+    delete outbound.plugin;
+    delete outbound.plugin_opts;
+    delete outbound.tls;
+    delete outbound.obfs;
+    delete outbound.multiplex;
+    delete outbound.up_mbps;
+    delete outbound.down_mbps;
+    delete outbound.packet_encoding;
+    delete outbound.tcp_fast_open;
   } else {
     delete outbound.password;
     delete outbound.up_mbps;

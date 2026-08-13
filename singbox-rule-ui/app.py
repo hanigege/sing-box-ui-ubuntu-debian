@@ -135,7 +135,7 @@ TELEGRAM_CIDR_DNS_SERVERS = tuple(
 )
 DOMAIN_RE = re.compile(r"^[A-Za-z0-9_*.-]+$")
 SPECIAL_OUTBOUNDS = {"Proxy", "Auto", "direct", "block"}
-SUPPORTED_NODE_TYPES = {"hysteria2", "vless", "shadowsocks"}
+SUPPORTED_NODE_TYPES = {"hysteria2", "vless", "shadowsocks", "socks"}
 BACKUP_VERSION = 1
 LOG_LEVELS = {"trace", "debug", "info", "warn", "warning", "error", "fatal", "panic"}
 LEGACY_APP_RULE_SETS = {
@@ -776,6 +776,20 @@ def normalize_node(raw):
             outbound["plugin"] = str(outbound["plugin"]).strip()
         if outbound.get("plugin_opts"):
             outbound["plugin_opts"] = str(outbound["plugin_opts"]).strip()
+    if node_type == "socks":
+        # SOCKS5 出站（本地中转）：指向本机 sslocal/ss-local 等程序的 socks5 入口，
+        # 用于 sing-box 的 shadowsocks+SIP003 plugin 间歇性断流时改用 sslocal relay 提速。
+        # 只需 server/server_port，无加密/密码/传输层字段；server 允许 127.0.0.1 本机。
+        server = str(outbound.get("server", "")).strip()
+        if not server:
+            raise ValueError(f"{tag}: server is required")
+        outbound["server"] = server
+        if outbound.get("server_port"):
+            outbound["server_port"] = int(outbound["server_port"])
+        # 清理从其他类型带过来的多余字段，避免渲染出非法 outbound
+        for key in ("password", "method", "plugin", "plugin_opts", "uuid", "tls", "obfs",
+                    "multiplex", "up_mbps", "down_mbps", "packet_encoding", "tcp_fast_open"):
+            outbound.pop(key, None)
     tls = outbound.get("tls")
     if isinstance(tls, dict):
         tls["enabled"] = normalize_bool(tls.get("enabled", True))
