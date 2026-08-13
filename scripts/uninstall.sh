@@ -214,7 +214,11 @@ main() {
     /usr/local/bin/sing-box-gateway-info \
     /usr/local/bin/sing-box-gateway-uninstall \
     "$LOGROTATE_CONFIG" \
-    /etc/sysctl.d/99-sing-box-tproxy.conf
+    /etc/sysctl.d/99-sing-box-tproxy.conf \
+    /etc/systemd/timesyncd.conf.d/10-china-ntp.conf
+  # timesyncd 的国内 NTP dropin 由安装器写入，卸载时一并移除并重载，
+  # 让系统回到发行版默认 NTP 源（不停用 timesyncd 本身，避免影响其它服务）。
+  systemctl restart systemd-timesyncd >/dev/null 2>&1 || true
   # 兼容早期可能残留的 OpenRC init 脚本。
   rm -f /etc/init.d/sing-box /etc/init.d/sing-box-tproxy /etc/init.d/singbox-rule-ui
   systemctl daemon-reload >/dev/null 2>&1 || true

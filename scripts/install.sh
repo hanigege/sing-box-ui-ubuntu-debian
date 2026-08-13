@@ -467,7 +467,35 @@ EOF
   systemctl restart cron >/dev/null 2>&1 || systemctl start cron >/dev/null 2>&1 || true
 }
 
+setup_ntp_china() {
+  # 时区固定为北京时间(Asia/Shanghai)：网关面向国内用户，日志时间戳与
+  # 用户本地时间一致才便于排障。
+  if command -v timedatectl >/dev/null 2>&1; then
+    timedatectl set-timezone Asia/Shanghai >/dev/null 2>&1 || true
+  elif [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+    echo "Asia/Shanghai" > /etc/timezone
+  fi
+  # NTP 上游用国内源：境内访问 Debian/Ubuntu 默认的 *.pool.ntp.org 常有
+  # 丢包/高延迟，而 AEAD-2022 要求时钟精度在 30 秒内，源不稳会让节点间歇性失效。
+  install -d -m 0755 /etc/systemd/timesyncd.conf.d
+  cat > /etc/systemd/timesyncd.conf.d/10-china-ntp.conf <<'NTPCONF'
+# sing-box 网关：国内 NTP 源（AEAD-2022 依赖 30 秒内的时钟精度）
+[Time]
+NTP=ntp.aliyun.com ntp1.aliyun.com time1.cloud.tencent.com
+FallbackNTP=cn.pool.ntp.org ntp.tuna.tsinghua.edu.cn
+NTPCONF
+}
+
 enable_services() {
+  # NTP 时钟同步：Shadowsocks AEAD-2022(2022-blake3-*) 有防重放保护，客户端与服务端
+  # 时间差超过 30 秒会被服务端直接拒连(日志: invalid timestamp)，表现为节点"能连但 0 B/s"。
+  # 网关时钟一旦漂移，所有 2022 加密节点集体失效，故安装时确保 systemd-timesyncd 已启用。
+  # 注意：这与 disable_systemd_resolved_stub 处理的 systemd-resolved 是两个独立服务，互不影响。
+  setup_ntp_china
+  systemctl enable systemd-timesyncd >/dev/null 2>&1 || true
+  # 先 restart 让 timesyncd.conf.d 里的国内 NTP 源立即生效（start 对已运行实例不重载配置）。
+  systemctl restart systemd-timesyncd >/dev/null 2>&1 || systemctl start systemd-timesyncd >/dev/null 2>&1 || true
   systemctl enable sing-box-tproxy >/dev/null 2>&1 || true
   systemctl enable sing-box >/dev/null 2>&1 || true
   systemctl enable singbox-rule-ui >/dev/null 2>&1 || true
