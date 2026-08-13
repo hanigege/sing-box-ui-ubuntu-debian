@@ -98,6 +98,28 @@ def template_nodes():
                 },
             },
         },
+        {
+            # AEAD-2022 + Caddy/WebSocket 伪装版样例（2026-08-13 新增）。
+            # 与直连版区别：server_port 是 443（Caddy TLS 入口）、带 plugin/plugin_opts
+            # （v2ray-plugin WebSocket 传输）。method 必须是 2022-blake3 系列，
+            # password 必须是 `ssservice genkey -m <method>` 生成的等长 base64 key——
+            # 必须是合法 base64（check 阶段就解码），下面这串 44 字符全零 base64 只是
+            # 占位，能过 check 但连不上，装机后必须换成真实 key，否则被拒：
+            #   ssservice genkey -m 2022-blake3-aes-256-gcm
+            # 服务端对应监听 127.0.0.1 + plugin server;mode=websocket;path=/jgagb，
+            # 由 Caddy 把 /jgagb 反代到本地 SS 端口（详见仓库 Wiki / 部署教程）。
+            "enabled": True,
+            "outbound": {
+                "type": "shadowsocks",
+                "tag": "TEMPLATE-SS-2022-WS",
+                "server": "203.0.113.20",
+                "server_port": 443,
+                "method": "2022-blake3-aes-256-gcm",
+                "password": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                "plugin": "v2ray-plugin",
+                "plugin_opts": "mode=websocket;tls;host=example.com;path=/jgagb",
+            },
+        },
     ]
 
 
@@ -112,7 +134,7 @@ def initial_nodes_from_file():
         if not isinstance(node, dict) or not isinstance(node.get("outbound"), dict):
             raise ValueError(f"Node {index} is missing outbound")
         outbound = node["outbound"]
-        if not outbound.get("tag") or outbound.get("type") not in {"hysteria2", "vless"}:
+        if not outbound.get("tag") or outbound.get("type") not in {"hysteria2", "vless", "shadowsocks"}:
             raise ValueError(f"Node {index} must have a supported outbound type and tag")
         node.setdefault("enabled", True)
     return data
