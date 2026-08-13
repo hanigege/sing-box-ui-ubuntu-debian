@@ -2440,10 +2440,11 @@ function nodeFormChanged() {
 
 function syncNodeTransportControls() {
   const isVless = $("nodeType").value === "vless";
+  const isSs = $("nodeType").value === "shadowsocks";
   const isBrutal = $("nodeTransportMode").value === "brutal";
   $("nodeTransportMode").disabled = !isVless;
-  $("nodeUp").disabled = isVless && !isBrutal;
-  $("nodeDown").disabled = isVless && !isBrutal;
+  $("nodeUp").disabled = (isVless && !isBrutal) || isSs;
+  $("nodeDown").disabled = (isVless && !isBrutal) || isSs;
   if (!isVless) {
     $("nodeTransportMode").value = "brutal";
   }
@@ -2460,6 +2461,9 @@ function selectNode(tag) {
   $("nodeServer").value = outbound.server || "";
   $("nodePort").value = outbound.server_port || "";
   $("nodeSecret").value = outbound.type === "vless" ? outbound.uuid || "" : outbound.password || "";
+  $("nodeMethod").value = outbound.method || "";
+  $("nodePlugin").value = outbound.plugin || "";
+  $("nodePluginOpts").value = outbound.plugin_opts || "";
   $("nodeSni").value = outbound.tls?.server_name || "";
   $("nodeObfs").value = outbound.obfs?.password || "";
   $("nodePublicKey").value = outbound.tls?.reality?.public_key || "";
@@ -2618,6 +2622,22 @@ function buildNodeFromForm() {
     } else {
       delete outbound.obfs;
     }
+  } else if (type === "shadowsocks") {
+    // Shadowsocks 出站：SIP003 plugin（v2ray-plugin websocket-tls）自带 TLS，不挂 tls/reality/obfs。
+    delete outbound.uuid;
+    delete outbound.tls;
+    delete outbound.obfs;
+    delete outbound.multiplex;
+    delete outbound.up_mbps;
+    delete outbound.down_mbps;
+    outbound.password = secret;
+    outbound.method = $("nodeMethod").value.trim() || "chacha20-ietf-poly1305";
+    const plugin = $("nodePlugin").value.trim();
+    const pluginOpts = $("nodePluginOpts").value.trim();
+    if (plugin) outbound.plugin = plugin;
+    else delete outbound.plugin;
+    if (pluginOpts) outbound.plugin_opts = pluginOpts;
+    else delete outbound.plugin_opts;
   } else {
     delete outbound.password;
     delete outbound.up_mbps;

@@ -182,6 +182,7 @@
             <select id="nodeType" aria-label="Node type">
               <option value="hysteria2">Hysteria2</option>
               <option value="vless">VLESS Reality</option>
+              <option value="shadowsocks">Shadowsocks</option>
             </select>
             <select id="nodeTransportMode" aria-label="VLESS transport mode">
               <option value="bbr">System BBR / TCP</option>
@@ -191,6 +192,9 @@
             <input id="nodeServer" type="text" autocomplete="off" placeholder="server" />
             <input id="nodePort" type="number" min="1" max="65535" placeholder="443" />
             <input id="nodeSecret" type="text" autocomplete="off" placeholder="password / uuid" />
+            <input id="nodeMethod" type="text" autocomplete="off" placeholder="method (chacha20-ietf-poly1305)" />
+            <input id="nodePlugin" type="text" autocomplete="off" placeholder="plugin (v2ray-plugin)" />
+            <input id="nodePluginOpts" type="text" autocomplete="off" placeholder="plugin_opts (mode=websocket;tls;host=...;path=/jgaga)" />
             <input id="nodeSni" type="text" autocomplete="off" placeholder="tls server_name" />
             <input id="nodeObfs" type="text" autocomplete="off" placeholder="obfs password" />
             <input id="nodePublicKey" type="text" autocomplete="off" placeholder="reality public_key" />
@@ -282,6 +286,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260802-dns-align"></script>
+    <script src="/app.js?v=20260813-shadowsocks"></script>
   </body>
 </html>

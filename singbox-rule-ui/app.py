@@ -130,7 +130,7 @@ TELEGRAM_CIDR_DNS_SERVERS = tuple(
 )
 DOMAIN_RE = re.compile(r"^[A-Za-z0-9_*.-]+$")
 SPECIAL_OUTBOUNDS = {"Proxy", "Auto", "direct", "block"}
-SUPPORTED_NODE_TYPES = {"hysteria2", "vless"}
+SUPPORTED_NODE_TYPES = {"hysteria2", "vless", "shadowsocks"}
 BACKUP_VERSION = 1
 LOG_LEVELS = {"trace", "debug", "info", "warn", "warning", "error", "fatal", "panic"}
 LEGACY_APP_RULE_SETS = {
@@ -676,6 +676,19 @@ def normalize_node(raw):
                     brutal["down_mbps"] = down
                 else:
                     brutal.pop("down_mbps", None)
+    if node_type == "shadowsocks":
+        # Shadowsocks 出站（支持 SIP003 plugin，如 v2ray-plugin websocket-tls）。
+        # 必填 password；method 缺省给 chacha20-ietf-poly1305；plugin/plugin_opts 原样透传。
+        if not str(outbound.get("password", "")).strip():
+            raise ValueError(f"{tag}: password is required")
+        outbound["password"] = str(outbound["password"]).strip()
+        if not str(outbound.get("method", "")).strip():
+            outbound["method"] = "chacha20-ietf-poly1305"
+        outbound["method"] = str(outbound["method"]).strip()
+        if outbound.get("plugin"):
+            outbound["plugin"] = str(outbound["plugin"]).strip()
+        if outbound.get("plugin_opts"):
+            outbound["plugin_opts"] = str(outbound["plugin_opts"]).strip()
     tls = outbound.get("tls")
     if isinstance(tls, dict):
         tls["enabled"] = normalize_bool(tls.get("enabled", True))
