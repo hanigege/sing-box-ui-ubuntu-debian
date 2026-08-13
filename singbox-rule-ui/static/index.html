@@ -99,14 +99,10 @@
               <span data-i18n="autoInterval">Interval</span>
               <input id="autoInterval" type="text" autocomplete="off" placeholder="30s" />
             </label>
-            <label class="switch-field">
+            <div class="wide-field">
               <span data-i18n="autoFallbackProtect">Fallback protection</span>
-              <input id="autoFallbackEnabled" type="checkbox" />
-            </label>
-            <label id="autoFallbackDelayGroup" class="hidden">
-              <span data-i18n="autoFallbackMaxDelay">Max delay</span>
-              <input id="autoFallbackMaxDelay" type="text" placeholder="400ms" />
-            </label>
+              <p id="autoFallbackNote" class="setting-note" data-i18n="autoFallbackNote">Official sing-box: idle_timeout 30m auto re-test.</p>
+            </div>
             <label class="switch-field">
               <span data-i18n="interruptConnections">Interrupt old connections</span>
               <input id="interruptConnections" type="checkbox" />
@@ -286,6 +282,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-shadowsocks"></script>
+    <script src="/app.js?v=20260813-official"></script>
   </body>
 </html>

@@ -765,8 +765,8 @@ def extract_initial_manager_data(config):
         "auto": {
             "url": (auto or {}).get("url", "https://www.gstatic.com/generate_204"),
             "interval": (auto or {}).get("interval", "30s"),
+            "idle_timeout": (auto or {}).get("idle_timeout", "30m"),
             "interrupt_exist_connections": (auto or {}).get("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS),
-            "fallback": (auto or {}).get("fallback", None),
         },
         "direct": direct or {"type": "direct", "tag": "direct"},
         "block": block or {"type": "block", "tag": "block"},
@@ -827,7 +827,7 @@ def load_groups():
     groups["auto"].setdefault("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS)
     # urltest 默认只影响新连接；需要快速脱离坏节点时，用户可以手动开启中断旧连接。
     groups["auto"]["interrupt_exist_connections"] = normalize_bool(groups["auto"]["interrupt_exist_connections"])
-    groups["auto"].setdefault("fallback", {"enabled": True, "max_delay": "400ms"})
+    groups["auto"].setdefault("idle_timeout", "30m")
     groups["fakeip"].setdefault("tag", "fakeip-dns")
     groups["fakeip"].setdefault("inet4_range", "28.0.0.0/8")
     groups["fakeip"].setdefault("inet6_range", "2001:2::/64")
@@ -903,18 +903,17 @@ def render_config(nodes=None, groups=None, rule_dir=RULE_DIR, normalized_lists=N
         "outbounds": preferred_auto_outbounds(tags, groups),
         "url": groups.get("auto", {}).get("url", "https://www.gstatic.com/generate_204"),
         "interval": groups.get("auto", {}).get("interval", "30s"),
+        # 官方 sing-box 回退保护：空闲 idle_timeout 后重新测速选优（等价 reF1nd fallback）
+        "idle_timeout": groups.get("auto", {}).get("idle_timeout", "30m"),
         # 默认只影响新连接；如果用户开启高级开关，则允许切换时主动清理旧连接。
         "interrupt_exist_connections": normalize_bool(
             groups.get("auto", {}).get("interrupt_exist_connections", DEFAULT_INTERRUPT_EXIST_CONNECTIONS)
         ),
-        "fallback": groups.get("auto", {}).get("fallback", None),
     }
     direct = groups.get("direct") or {"type": "direct", "tag": "direct"}
     block = groups.get("block") or {"type": "block", "tag": "block"}
     config["outbounds"] = [proxy, auto, *[node["outbound"] for node in nodes if node.get("enabled", True)], direct, block]
     prune_managed_outbound_references(config, tags)
-    # reF1nd: 启用 Unified Delay，测速延时只计第二次 HTTP 请求（排除 TCP/TLS 握手），面板显示更真实
-    config.setdefault("experimental", {})["urltest_unified_delay"] = True
     return config
 
 

@@ -232,11 +232,11 @@ const translations = {
     testingDelay: "Testing node delay",
     delayUpdated: "Delay updated",
     autoTitle: "Auto",
-    autoNote: "Fallback protection skips nodes exceeding max delay. When disabled, Auto picks the best node directly.",
+    autoNote: "Urltest selects a node by latency; idle_timeout re-tests after idle (official fallback protection).",
     autoUrl: "Test URL",
     autoInterval: "Interval",
     autoFallbackProtect: "Fallback protection",
-    autoFallbackMaxDelay: "Max delay",
+    autoFallbackNote: "Official sing-box: idle_timeout 30m auto re-test after idle.",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
     localDnsNote: "Choose one local-dns upstream. sing-box does not run these in parallel.",
@@ -558,11 +558,11 @@ const translations = {
     testingDelay: "正在检测节点延迟",
     delayUpdated: "延迟已更新",
     autoTitle: "Auto 自动选择",
-    autoNote: "回退保护跳过超过最大延迟的节点。关闭时 Auto 直接选最快节点。",
+    autoNote: "urltest 按延迟选节点；空闲后 idle_timeout 自动重新测速（官方回退保护）。",
     autoUrl: "测速链接",
     autoInterval: "检测间隔",
     autoFallbackProtect: "回退保护",
-    autoFallbackMaxDelay: "最大延迟",
+    autoFallbackNote: "官方 sing-box：空闲 30m 后自动重新测速（idle_timeout 30m）。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
@@ -2258,13 +2258,7 @@ function renderNodes() {
   state.groups.telegram = state.groups.telegram || {};
   if (document.activeElement !== $("autoUrl")) $("autoUrl").value = state.groups.auto.url || "https://www.gstatic.com/generate_204";
   if (document.activeElement !== $("autoInterval")) $("autoInterval").value = state.groups.auto.interval || "30s";
-  // Fallback protection: show/hide max_delay
-  const fallbackCfg = state.groups.auto.fallback;
-  const fallbackEnabled = fallbackCfg && fallbackCfg.enabled === true;
-  $("autoFallbackEnabled").checked = fallbackEnabled;
-  const maxDelayVal = (fallbackCfg && fallbackCfg.max_delay) || "";
-  if (document.activeElement !== $("autoFallbackMaxDelay")) $("autoFallbackMaxDelay").value = maxDelayVal;
-  $("autoFallbackDelayGroup").classList.toggle("hidden", !fallbackEnabled);
+  // 官方版回退保护 = urltest idle_timeout（固定 30m），无独立开关；说明文案展示即可。
   $("interruptConnections").checked =
     state.groups.proxy.interrupt_exist_connections === true || state.groups.auto.interrupt_exist_connections === true;
   renderLocalDnsSettings();
@@ -2984,11 +2978,6 @@ $("nodeCancel").addEventListener("click", clearNodeForm);
 $("searchInput").addEventListener("input", render);
 $("typeInput").addEventListener("change", updateValueHint);
 $("saveBtn").addEventListener("click", () => save());
-// Fallback toggle: show/hide max_delay
-$("autoFallbackEnabled").addEventListener("change", function() {
-  $("autoFallbackDelayGroup").classList.toggle("hidden", !this.checked);
-  markChanged();
-});
 $("logoutBtn").addEventListener("click", logout);
 $("refreshDelayBtn").addEventListener("click", refreshDelays);
 $("refreshMaintenanceBtn").addEventListener("click", refreshMaintenance);
@@ -3033,13 +3022,8 @@ function syncNodeSettingsFromForm() {
   state.groups.auto = state.groups.auto || {};
   state.groups.auto.url = $("autoUrl").value.trim();
   state.groups.auto.interval = $("autoInterval").value.trim();
-  const fallbackEnabled = $("autoFallbackEnabled").checked;
-  if (fallbackEnabled) {
-    const maxDelay = $("autoFallbackMaxDelay").value.trim() || "400ms";
-    state.groups.auto.fallback = { enabled: true, max_delay: maxDelay };
-  } else {
-    state.groups.auto.fallback = { enabled: false };
-  }
+  // 官方版回退保护固定用 idle_timeout 30m（urltest 空闲后重新测速），不再配置 fallback/max_delay
+  state.groups.auto.idle_timeout = "30m";
   state.groups.auto.interrupt_exist_connections = $("interruptConnections").checked;
   state.groups.dns = state.groups.dns || {};
   state.groups.dns.local = $("localDnsSelect").value || "alidns";
