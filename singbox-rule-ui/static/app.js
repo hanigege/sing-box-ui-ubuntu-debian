@@ -241,6 +241,7 @@ const translations = {
     autoIdleTimeout: "Idle timeout",
     autoIdleNote: "Idle timeout: once no traffic goes through the Auto group for this long, periodic testing stops and resumes automatically on the next connection \u2014 resource saving only, it does not affect node selection. Tolerance is the anti-flapping threshold: a candidate must be at least this many ms faster to take over. Idle timeout must be greater than or equal to the interval, otherwise sing-box refuses to start.",
     nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
+    nodeSsFormatNote: "Shadowsocks fill-in: method 2022-blake3-aes-256-gcm needs a 44-char base64 key from `ssservice genkey` (NOT a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH. Both fields are required — leaving plugin empty silently removes the disguise (node breaks).",
     interruptConnections: "Interrupt old connections",
     localDnsTitle: "China DNS",
     localDnsNote: "Choose one local-dns upstream. sing-box does not run these in parallel.",
@@ -571,6 +572,7 @@ const translations = {
     autoIdleTimeout: "空闲停测",
     autoIdleNote: "空闲停测：Auto 组连续这么久没有流量经过时停止周期测速，下次有连接自动恢复——只省资源，不影响选路。切换容差是防抖阈值：候选节点要比当前节点快这么多毫秒才会接替，设 0 会在延迟抖动时反复横跳。空闲停测必须不小于检测间隔，否则 sing-box 拒绝启动。",
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
+    nodeSsFormatNote: "Shadowsocks 填写格式：加密方式选 2022-blake3-aes-256-gcm 时，密码必须是 `ssservice genkey -m 2022-blake3-aes-256-gcm` 生成的 44 字符 base64 key（不能填普通字符串密码）。WS 伪装版：插件填 v2ray-plugin，插件参数填 mode=websocket;tls;host=你的域名;path=/你的暗号。这两项必填——插件留空保存会被静默删掉，节点会退回直连而连不上。",
     interruptConnections: "切换时中断旧连接",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
@@ -2459,6 +2461,12 @@ function syncNodeTransportControls() {
     const method = ($("nodeMethod").value || "").trim().toLowerCase();
     const needsClockSync = isSs && method.startsWith("2022-blake3");
     note.classList.toggle("hidden", !needsClockSync);
+  }
+  // SS 填写格式提示：只要节点类型是 SS 就显示（区别于时钟提示只在 2022 时显示）。
+  // 防止用户不知道 plugin/plugin_opts 该怎么填、或保存时留空被删（回直连连不上）。
+  const ssNote = $("nodeSsFormatNote");
+  if (ssNote) {
+    ssNote.classList.toggle("hidden", !isSs);
   }
 }
 

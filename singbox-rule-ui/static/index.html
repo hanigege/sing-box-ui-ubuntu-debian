@@ -207,6 +207,11 @@
                  NTP（详见 install.sh 注释），所以在这里提示用户自行保证时钟同步。
                  显隐由 app.js syncNodeTransportControls() 按 method 是否 2022-blake3 控制。 -->
             <p id="nodeClockNote" class="setting-note hidden" data-i18n="nodeClockNote">2022-blake3 encryption requires the gateway and server clocks to be within 30 seconds, otherwise the node connects but transfers 0 B/s. Keep NTP running on this host.</p>
+            <!-- Shadowsocks 节点填写格式提示：SS 类型即显示（区别于 nodeClockNote 只在
+                 2022-blake3 时显示）。重点提示 AEAD-2022 + WS 伪装版的 plugin/plugin_opts
+                 标准填法，避免用户保存时字段留空被删（UI 保存逻辑对空 plugin 直接 delete）。
+                 显隐由 app.js syncNodeTransportControls() 按 nodeType 控制。 -->
+            <p id="nodeSsFormatNote" class="setting-note hidden" data-i18n="nodeSsFormatNote">Shadowsocks fill-in guide: method 2022-blake3-aes-256-gcm requires a 44-char base64 key from `ssservice genkey` (not a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH — both fields are required, leaving them empty removes the disguise and the node breaks.</p>
             <input id="nodeSni" type="text" autocomplete="off" placeholder="tls server_name" />
             <input id="nodeObfs" type="text" autocomplete="off" placeholder="obfs password" />
             <input id="nodePublicKey" type="text" autocomplete="off" placeholder="reality public_key" />
@@ -298,6 +303,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260813-hotswitch"></script>
+    <script src="/app.js?v=20260813-ssformatnote"></script>
   </body>
 </html>
