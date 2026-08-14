@@ -178,7 +178,7 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                     "server_port": 443,
                     "path": "/dns-query",
                     "tls": {"server_name": "cloudflare-dns.com"},
-                    "detour": "Proxy",
+                    "detour": "Auto",
                 },
                 {
                     "tag": "local-dns",
@@ -192,7 +192,7 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                     "type": "udp",
                     "server": "1.1.1.1",
                     "server_port": 53,
-                    "detour": "Proxy",
+                    "detour": "Auto",
                     # DDNS 的代理解析只需要从代理出口查真实地址；不要复用 remote-dns 的 DoH 长连接，避免直连 DDNS 业务被 DNS 旧连接拖住。
                 },
                 {"tag": "fakeip-dns", "type": "fakeip", "inet4_range": fake4, "inet6_range": fake6},

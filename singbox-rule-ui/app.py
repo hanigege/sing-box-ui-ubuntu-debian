@@ -77,7 +77,7 @@ DDNS_REMOTE_DNS_SERVER = {
     "server_port": 443,
     "path": "/dns-query",
     "tls": {"server_name": "cloudflare-dns.com"},
-    "detour": "Proxy",
+    "detour": "Auto",
     # DDNS 的“代理解析”走独立 DoH（不复用 remote-dns 的连接，避免互相影响）。
     # 加密 DoH 而非明文 UDP：查询全程 TLS，且 TCP 传输对 UDP-disabled 节点（sslocal relay）兼容——
     # 之前 UDP+detour Proxy 在 Proxy 切到 US-232-sslocal 时所有 DDNS 域名解析挂死（socks5 code=7）。
