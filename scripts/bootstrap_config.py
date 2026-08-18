@@ -260,7 +260,8 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                 {"rule_set": ["geosite-geolocation-!cn"], "outbound": "Proxy"},
                 {"rule_set": ["geosite-cn", "geosite-geolocation-cn", "geosite-icloud@cn", "geosite-apple@cn", "geoip-cn"], "outbound": "direct"},
             ],
-            "final": "direct",
+            # 兜底走代理：未匹配规则的流量与 API/页面同出口，避免 CDN 签名 IP 不一致（2026-08-18 小哥拍板）
+            "final": "Proxy",
         },
         "experimental": {
             "cache_file": {"enabled": True, "store_fakeip": True},
