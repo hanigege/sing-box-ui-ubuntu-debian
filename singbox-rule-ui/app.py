@@ -2938,6 +2938,11 @@ def config_health_status():
         "inet4Range": fakeip_dns.get("inet4_range", ""),
         "inet6Range": fakeip_dns.get("inet6_range", ""),
     }
+    # 兜底出口（route.final）自 2026-08-18 起跟随 base.json 的有意配置（可能 direct 也可能 Proxy），
+    # 健康检查只校验「final 是否指向合法出站」，不再要求必须是 direct；指向不存在的 outbound 才算问题。
+    route_final = route.get("final", "")
+    outbound_tags = {o.get("tag") for o in config.get("outbounds", []) or [] if isinstance(o, dict)}
+    final_valid = bool(route_final) and route_final in (outbound_tags | {"direct", "block"})
     # 维护页只做只读体检，不参与配置生成；这里用于提前发现重复规则膨胀，避免长期保存后拖慢路由匹配。
     ok = (
         not any(duplicates.values())
@@ -2945,14 +2950,14 @@ def config_health_status():
         and route_order_ok
         and fakeip_route_ok
         and bool(local_dns_status.get("server"))
-        and route.get("final") == "direct"
+        and final_valid
     )
     summary = config_health_summary(
         ok=ok,
         route_order_ok=route_order_ok,
         fakeip_route_ok=fakeip_route_ok,
         mtu=mtu,
-        route_final=route.get("final", ""),
+        final_valid=final_valid,
         local_dns=local_dns_status,
         duplicates=duplicates,
         udp443_reject_count=len(udp443_reject),
@@ -2967,6 +2972,7 @@ def config_health_status():
         "duplicateRules": duplicates,
         "udp443RejectRules": len(udp443_reject),
         "routeFinal": route.get("final", ""),
+        "routeFinalValid": final_valid,
         "bareDirectRuleIndexes": bare_direct_indexes,
         "geositeProxyRuleIndexes": geosite_proxy_indexes,
         "routeOrderOk": route_order_ok,
@@ -2977,7 +2983,7 @@ def config_health_status():
     }
 
 
-def config_health_summary(ok, route_order_ok, fakeip_route_ok, mtu, route_final, local_dns, duplicates, udp443_reject_count):
+def config_health_summary(ok, route_order_ok, fakeip_route_ok, mtu, final_valid, local_dns, duplicates, udp443_reject_count):
     reasons = []
     if any(duplicates.values()):
         reasons.append("duplicate_rules")
@@ -2989,14 +2995,14 @@ def config_health_summary(ok, route_order_ok, fakeip_route_ok, mtu, route_final,
         reasons.append("fakeip_route")
     if not local_dns.get("server"):
         reasons.append("local_dns")
-    if route_final != "direct":
+    if not final_valid:
         reasons.append("route_final")
     if (
         ok
         and route_order_ok
         and fakeip_route_ok
         and str(mtu) in ("1492", "1500")
-        and route_final == "direct"
+        and final_valid
         and bool(local_dns.get("server"))
     ):
         return {"level": "great", "tone": "good", "reasons": []}
