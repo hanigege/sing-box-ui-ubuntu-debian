@@ -246,10 +246,6 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                 {"network": "udp", "port": 443, "ip_cidr": [fake4, fake6], "action": "reject"},
                 {"inbound": "tproxy-in", "action": "sniff", "sniffer": ["tls", "http"], "timeout": "300ms"},
                 {"rule_set": "custom-blacklist", "outbound": "block"},
-                # 解析真实 IP 供 IP 规则匹配（fakeip 域名默认拿不到真实 IP 做 geoip 判断，2026-08-18 实测）
-                {"action": "resolve"},
-                # IP 优先：解析出国内 IP 一律直连（2026-08-18 小哥拍板），不依赖域名是否在 cn 列表
-                {"rule_set": ["geoip-cn"], "outbound": "direct"},
                 {"rule_set": "custom-whitelist", "outbound": "direct"},
                 {"rule_set": "custom-ddns", "outbound": "direct"},
                 {"rule_set": "custom-greylist", "outbound": "Proxy"},
@@ -262,7 +258,7 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                 {"ip_cidr": [fake4, fake6], "outbound": "Proxy"},
                 {"ip_is_private": True, "outbound": "direct"},
                 {"rule_set": ["geosite-geolocation-!cn"], "outbound": "Proxy"},
-                {"rule_set": ["geosite-cn", "geosite-geolocation-cn", "geosite-icloud@cn", "geosite-apple@cn"], "outbound": "direct"},
+                {"rule_set": ["geosite-cn", "geosite-geolocation-cn", "geosite-icloud@cn", "geosite-apple@cn", "geoip-cn"], "outbound": "direct"},
             ],
             # 兜底走代理：未匹配规则的流量与 API/页面同出口，避免 CDN 签名 IP 不一致（2026-08-18 小哥拍板）
             "final": "Proxy",
