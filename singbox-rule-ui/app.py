@@ -1081,9 +1081,7 @@ def apply_route_final_policy(config):
         for rule in rules
         if not (isinstance(rule, dict) and rule.get("outbound") == "direct" and set(rule.keys()) == {"outbound"})
     ]
-    # 兜底出口跟随 base.json 的 route.final（默认 direct）：未匹配任何规则的流量
-    # 与 API/页面同出口，避免「API 走代理、CDN 直连」导致的签名 IP 不一致（2026-08-18）。
-    route["final"] = route.get("final", "direct")
+    route["final"] = "direct"
 
 
 def managed_binary_rule_set(tag, path):
