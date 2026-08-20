@@ -1081,7 +1081,12 @@ def apply_route_final_policy(config):
         for rule in rules
         if not (isinstance(rule, dict) and rule.get("outbound") == "direct" and set(rule.keys()) == {"outbound"})
     ]
-    route["final"] = "direct"
+    # 2026-08-20 小哥拍板：兜底出口跟随 base.json 的 route.final（现为 Proxy），不再写死 direct。
+    # 8-19 二次回滚曾强制 direct；改回尊重源头配置，仅校验合法值，非法/缺失时兜底 direct。
+    final = route.get("final", "direct")
+    if final not in ("direct", "Proxy"):
+        final = "direct"
+    route["final"] = final
 
 
 def managed_binary_rule_set(tag, path):
@@ -2943,7 +2948,7 @@ def config_health_status():
         and route_order_ok
         and fakeip_route_ok
         and bool(local_dns_status.get("server"))
-        and route.get("final") == "direct"
+        and route.get("final") in ("direct", "Proxy")
     )
     summary = config_health_summary(
         ok=ok,
@@ -2987,14 +2992,14 @@ def config_health_summary(ok, route_order_ok, fakeip_route_ok, mtu, route_final,
         reasons.append("fakeip_route")
     if not local_dns.get("server"):
         reasons.append("local_dns")
-    if route_final != "direct":
+    if route_final not in ("direct", "Proxy"):
         reasons.append("route_final")
     if (
         ok
         and route_order_ok
         and fakeip_route_ok
         and str(mtu) in ("1492", "1500")
-        and route_final == "direct"
+        and route_final in ("direct", "Proxy")
         and bool(local_dns.get("server"))
     ):
         return {"level": "great", "tone": "good", "reasons": []}
