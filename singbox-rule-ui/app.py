@@ -2214,6 +2214,28 @@ def script_ipv6_prefixes(path):
     return values
 
 
+def ipv6_prefixes_covered(current, script_prefixes):
+    # 判断当前网卡 IPv6 前缀是否全部被脚本覆盖。必须是网段包含语义而非字符串相等：
+    # 脚本静态写死 fc00::/7（ULA 超网），而网卡上的 ULA（如 fd88::/64）是它的子网，
+    # 字符串比较会误报「前缀不匹配」（Alpine 生产机 2026-08-30 实测误报）。
+    # 反过来，网卡出现脚本未覆盖的新公网前缀（PPPoE 重新分配等）仍必须告警，
+    # 否则旁路网关会漏掉该前缀的流量。
+    covered = []
+    for raw in script_prefixes:
+        try:
+            covered.append(ipaddress.ip_network(raw, strict=False))
+        except ValueError:
+            continue
+    for raw in current:
+        try:
+            network = ipaddress.ip_network(raw, strict=False)
+        except ValueError:
+            return False
+        if not any(network.version == item.version and network.subnet_of(item) for item in covered):
+            return False
+    return True
+
+
 def outbound_server_ips():
     return [item["address"] for item in resolved_outbound_servers() if item.get("address")]
 
@@ -2854,7 +2876,8 @@ def maintenance_status():
             "currentIpv4Prefixes": current_ipv4_prefixes(iface),
             "scriptIpv6Prefixes": script_v6,
             # 多个公网 IPv6 前缀会同时下发给旁路网关；只命中其中一个仍会让另一个真实前缀误走 TProxy，状态页必须完整提示需要重新同步。
-            "ipv6PrefixMatches": not script_v6 or all(item in script_v6 for item in current_v6),
+            # 用网段包含语义判断（含 fc00::/7 超网覆盖 ULA 子网的情况），字符串相等会误报。
+            "ipv6PrefixMatches": not script_v6 or ipv6_prefixes_covered(current_v6, script_v6),
             "outboundServerIps": outbound_server_ips(),
             "outboundServers": resolved_outbound_servers(),
             "planned": tproxy_bypass_sets(),
@@ -3786,7 +3809,9 @@ class Handler(BaseHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        print("%s - %s" % (self.address_string(), fmt % args))
+        # stdout 被 systemd unit 重定向到 journal/文件后是块缓冲，不强制刷盘会把访问日志
+        # 卡在内存里（Alpine 生产机实测日志文件停写），排障时看不到实时请求记录。
+        print("%s - %s" % (self.address_string(), fmt % args), flush=True)
 
     def authorized(self):
         token = get_token()

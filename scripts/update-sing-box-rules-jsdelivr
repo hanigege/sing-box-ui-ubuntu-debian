@@ -35,6 +35,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+SCRIPT_START_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
+
 DEFAULT_RAW_MIRRORS=(
   "https://gh-proxy.com/https://raw.githubusercontent.com"
   "https://ghproxy.net/https://raw.githubusercontent.com"
@@ -368,20 +370,57 @@ prune_legacy_unused_rules() {
   done
 }
 
+record_rule_update_last() {
+  # 记录本次更新结果到 rule-update-last.json，让维护页「上次更新」对 cron 定时运行
+  # 也有正确时间（此前只有 UI 手动按钮经 app.py 写这个文件，cron 跑完时间停留在
+  # 上次手动运行，Alpine 生产机实测「上次更新」停在两周前）。log/summary 留空，
+  # app.py 读不到会自动回退解析 rule-update.log，不会掩盖真实日志。
+  local result="$1"
+  [ -d "$MANAGER_DIR" ] || return 0
+  RULE_UPDATE_RESULT="$result" RULE_UPDATE_STARTED="$SCRIPT_START_TIME" python3 - "$MANAGER_DIR/rule-update-last.json" <<'PY' || true
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+result = os.environ.get("RULE_UPDATE_RESULT", "")
+data = {
+    "startedAt": os.environ.get("RULE_UPDATE_STARTED", ""),
+    "finishedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
+    "result": result,
+    "code": 0 if result == "success" else 1,
+    "log": "",
+    "summary": {},
+}
+try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+except OSError:
+    pass
+PY
+}
+
 finish_checked_update() {
   local restart_reason="${1:-sing-box rule sets updated}"
   local restart="${2:-$RESTART_SERVICE}"
+  local result="${3:-success}"
   prune_legacy_unused_rules
 
   if ! "$SING_BOX" check -c "$CONFIG"; then
     echo "ERROR: sing-box config check failed after rule update; rolling back rule files" >&2
     restore_backups
     "$SING_BOX" check -c "$CONFIG" || true
+    record_rule_update_last "failed"
     exit 1
   fi
 
   if [ "$restart" = "0" ]; then
     echo "$restart_reason and config checked. Service restart skipped."
+    record_rule_update_last "$result"
     exit 0
   fi
 
@@ -389,12 +428,17 @@ finish_checked_update() {
     echo "ERROR: sing-box restart failed after rule update; rolling back rule files" >&2
     restore_backups
     "$SING_BOX" check -c "$CONFIG" || true
-    restart_sing_box_safely || exit 1
+    if ! restart_sing_box_safely; then
+      record_rule_update_last "failed"
+      exit 1
+    fi
+    record_rule_update_last "failed"
     exit 1
   fi
 
   systemctl is-active "$SERVICE" >/dev/null 2>&1
   echo "$restart_reason and service restarted safely."
+  record_rule_update_last "$result"
   exit 0
 }
 
@@ -404,7 +448,7 @@ if ! select_mirrors; then
     # 定时更新不能因为外部镜像慢而长时间阻塞；已有规则可用时保留现状，下次再试。
     echo "WARN: no rule mirror passed quick probe; existing required rule files are present, skipped this update safely" >&2
     echo "WARN: set RULE_UPDATE_FORCE=1, RULE_UPDATE_RAW_MIRRORS, or RULE_UPDATE_CDN_MIRRORS to force a retry" >&2
-    finish_checked_update "sing-box rule update skipped safely" "0"
+    finish_checked_update "sing-box rule update skipped safely" "0" "skipped"
   fi
   echo "WARN: no rule mirror passed quick probe; forcing configured mirrors because required rule files are missing" >&2
   echo "WARN: system DNS was not changed; check /etc/resolv.conf, firewall, RULE_UPDATE_RAW_MIRRORS, or RULE_UPDATE_CDN_MIRRORS if downloads fail" >&2
@@ -438,6 +482,7 @@ if [ "$fail" -ne 0 ]; then
   # 这里不强行 check/restart（缺文件时 check 必败且回滚会误删已装文件），
   # 安装流程（install.sh 里 `|| true`）照常继续，verify 阶段会报缺哪些。
   echo "WARN: some rule files failed to download; installed ${#UPDATED_FILES[@]} file(s), missing files will be retried by cron" >&2
+  record_rule_update_last "failed"
   exit "$fail"
 fi
 
