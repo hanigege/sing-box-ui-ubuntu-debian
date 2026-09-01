@@ -260,7 +260,10 @@ def base_config(lan_ip, ui_secret, fake4, fake6, ipv6_dns_listen):
                 {"rule_set": ["geosite-geolocation-!cn"], "outbound": "Proxy"},
                 {"rule_set": ["geosite-cn", "geosite-geolocation-cn", "geosite-icloud@cn", "geosite-apple@cn", "geoip-cn"], "outbound": "direct"},
             ],
-            "final": "direct",
+            # 2026-09-01 小哥拍板：新装默认兜底出口 Proxy（与生产机 10.20.20.6 一致）。
+            # 历史上 8-19 曾因 final=Proxy 引发 Gemini 地区限制/YouTube 降速而两度回滚，
+            # 但 8-20 起生产机已重新启用 Proxy 并稳定运行；此处只改新装默认值，运行中机器不受影响。
+            "final": "Proxy",
         },
         "experimental": {
             "cache_file": {"enabled": True, "store_fakeip": True},
