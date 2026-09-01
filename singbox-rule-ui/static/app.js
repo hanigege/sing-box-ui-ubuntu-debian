@@ -2273,8 +2273,10 @@ function renderNodes() {
   if (document.activeElement !== $("autoTolerance")) {
     $("autoTolerance").value = state.groups.auto.tolerance ?? 50;
   }
+  // 该开关同时控制 Proxy(selector) 和 Auto(urltest) 两个组；仅当两者都开启时才显示开启，
+  // 避免出现一组开一组关的不一致状态被 UI 掩盖（保存时本就强制两者同值）。
   $("interruptConnections").checked =
-    state.groups.proxy.interrupt_exist_connections === true || state.groups.auto.interrupt_exist_connections === true;
+    state.groups.proxy.interrupt_exist_connections === true && state.groups.auto.interrupt_exist_connections === true;
   renderLocalDnsSettings();
   if (document.activeElement !== $("fakeipV4")) $("fakeipV4").value = state.groups.fakeip.inet4_range || "28.0.0.0/8";
   if (document.activeElement !== $("fakeipV6")) $("fakeipV6").value = state.groups.fakeip.inet6_range || "2001:2::/64";
