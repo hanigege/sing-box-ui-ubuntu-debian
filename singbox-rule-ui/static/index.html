@@ -118,6 +118,19 @@
               <span data-i18n="interruptConnections">Interrupt old connections</span>
               <input id="interruptConnections" type="checkbox" />
             </label>
+            <!-- 兜底出口：未匹配任何规则的流量走哪。默认 Proxy（国外站点全开）；
+                 切 direct 后未匹配流量直连——国内全部正常，但部分国外域名会打不开。
+                 改动立即生效（走 /api/route/final，不随 Save 按钮提交）。 -->
+            <label>
+              <span data-i18n="routeFinal">Fallback route</span>
+              <select id="routeFinal">
+                <option value="Proxy">Proxy</option>
+                <option value="direct">direct</option>
+              </select>
+            </label>
+            <div class="wide-field">
+              <p id="routeFinalNote" class="setting-note" data-i18n="routeFinalNote"></p>
+            </div>
           </section>
 
           <section class="compact-settings dns-settings" aria-label="Local DNS settings">
@@ -305,6 +318,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260901-interruptand"></script>
+    <script src="/app.js?v=20260901-routefinal"></script>
   </body>
 </html>

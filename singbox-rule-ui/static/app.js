@@ -244,6 +244,10 @@ const translations = {
     nodeSsFormatNote: "Shadowsocks fill-in: method 2022-blake3-aes-256-gcm needs a 44-char base64 key from `ssservice genkey` (NOT a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH. Both fields are required — leaving plugin empty silently removes the disguise (node breaks).",
     nodeSocksNote: "SOCKS5 local relay: point to a local socks5 entry (sslocal/ss-local/Dante) on 127.0.0.1, e.g. server=127.0.0.1 port=10010. No password/encryption needed. Typical use: shadowsocks + SIP003 plugin in sing-box intermittently stalls (0-13MB/s, downloads cut off); running the official sslocal client locally and routing sing-box through it restores full speed.",
     interruptConnections: "Interrupt old connections",
+    routeFinal: "Fallback route",
+    routeFinalNote: "Fallback route: where traffic that matches no rule goes. Proxy (default) routes it through the current node — all foreign sites open. direct connects directly: all domestic sites work fine, but some foreign domains may fail to load. Takes effect immediately on change (with config check + rollback).",
+    routeFinalDirectWarn: "Switch fallback route to direct? Unmatched traffic will go direct: domestic sites are unaffected, but some foreign domains may fail to open. Continue?",
+    routeFinalApplied: "Fallback route switched to",
     localDnsTitle: "China DNS",
     localDnsNote: "Choose one local-dns upstream. sing-box does not run these in parallel.",
     localDnsUpstream: "Upstream",
@@ -576,6 +580,10 @@ const translations = {
     nodeSsFormatNote: "Shadowsocks 填写格式：加密方式选 2022-blake3-aes-256-gcm 时，密码必须是 `ssservice genkey -m 2022-blake3-aes-256-gcm` 生成的 44 字符 base64 key（不能填普通字符串密码）。WS 伪装版：插件填 v2ray-plugin，插件参数填 mode=websocket;tls;host=你的域名;path=/你的暗号。这两项必填——插件留空保存会被静默删掉，节点会退回直连而连不上。",
     nodeSocksNote: "SOCKS5 本地中转：填本机 sslocal/ss-local 等程序的 socks5 监听地址和端口（例如 server=127.0.0.1、端口=10010），无需密码/加密。典型用途：sing-box 的 shadowsocks + v2ray-plugin（SIP003）间歇性断流（下载 0-13MB/s 且中途中断）时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口，可恢复满速。",
     interruptConnections: "切换时中断旧连接",
+    routeFinal: "兜底出口",
+    routeFinalNote: "兜底出口：未匹配任何规则的流量走哪里。默认 Proxy 走当前代理节点，国外网站都能正常打开；选 direct 则未匹配流量直连——国内网站完全不受影响，但部分国外域名可能打不开。改动立即生效（带配置校验和失败回滚）。",
+    routeFinalDirectWarn: "确认把兜底出口切换为 direct？未匹配规则的流量将直连：国内网站完全正常使用，但部分国外域名可能会打不开。是否继续？",
+    routeFinalApplied: "兜底出口已切换为",
     localDnsTitle: "国内 DNS",
     localDnsNote: "为国内直连域名选择一个 local-dns 上游；sing-box 不会并发查询这些 DNS。",
     localDnsUpstream: "上游",
@@ -2277,6 +2285,9 @@ function renderNodes() {
   // 避免出现一组开一组关的不一致状态被 UI 掩盖（保存时本就强制两者同值）。
   $("interruptConnections").checked =
     state.groups.proxy.interrupt_exist_connections === true && state.groups.auto.interrupt_exist_connections === true;
+  // 兜底出口来自 base.json（不经 /api/save），初始值由 /api/state 的 baseConfig.routeFinal 下发；
+  // 修改走 /api/route/final 即时生效，故只在该控件未聚焦时回填，避免用户正在选时被覆盖。
+  if (document.activeElement !== $("routeFinal")) $("routeFinal").value = state.baseConfig?.routeFinal || "Proxy";
   renderLocalDnsSettings();
   if (document.activeElement !== $("fakeipV4")) $("fakeipV4").value = state.groups.fakeip.inet4_range || "28.0.0.0/8";
   if (document.activeElement !== $("fakeipV6")) $("fakeipV6").value = state.groups.fakeip.inet6_range || "2001:2::/64";
@@ -3136,6 +3147,27 @@ function syncDraftSettings() {
 $("localDnsSelect").addEventListener("change", () => {
   syncNodeSettingsChanged();
   render();
+});
+// 兜底出口修改独立于 /api/save：走 /api/route/final 立即生效（后端带 staged check + 回滚）。
+// 切 direct 前先弹确认，告知国外域名可能打不开；后端拒绝/失败时回退控件显示为当前实际值。
+$("routeFinal").addEventListener("change", async () => {
+  const next = $("routeFinal").value;
+  const prev = state.baseConfig?.routeFinal || "Proxy";
+  if (next === prev) return;
+  if (next === "direct" && !window.confirm(t("routeFinalDirectWarn"))) {
+    $("routeFinal").value = prev;
+    return;
+  }
+  try {
+    setStatus(`${t("routeFinalApplied")} ${next}…`);
+    const result = await api("/api/route/final", { method: "POST", body: JSON.stringify({ final: next }) });
+    if (result.state) state = result.state;
+    setStatus(`${t("routeFinalApplied")} ${result.final}`, "good");
+    render();
+  } catch (error) {
+    $("routeFinal").value = prev;
+    setStatus(error.message, "bad");
+  }
 });
 $("customDnsServer").addEventListener("input", syncNodeSettingsChanged);
 $("customDnsServer").addEventListener("change", syncNodeSettingsChanged);

@@ -3219,6 +3219,55 @@ def set_log_level(level):
         raise
 
 
+ROUTE_FINAL_CHOICES = ("Proxy", "direct")
+
+
+def set_route_final(final):
+    # 兜底出口只接受 Proxy/direct，写入 base.json 的 route.final；渲染层 apply_route_final_policy
+    # 会跟随该值，非法/缺失时兜底 direct（见该函数注释）。改动影响 config.json，
+    # 必须走 staged check + 失败回滚，与 set_log_level 同一保护链路。
+    final = str(final).strip()
+    if final not in ROUTE_FINAL_CHOICES:
+        raise ValueError(f"route final must be one of {ROUTE_FINAL_CHOICES}")
+    ensure_manager_data()
+    base = load_json(BASE_CONFIG_PATH, {})
+    previous_base = backup_manager_file(BASE_CONFIG_PATH)
+    previous_config = backup_manager_file(CONFIG_PATH)
+    old_final = base.get("route", {}).get("final", "Proxy")
+    base.setdefault("route", {})["final"] = final
+    write_json(BASE_CONFIG_PATH, base)
+    try:
+        config = render_config()
+        validate_outbound_references(config)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(MANAGER_DIR), prefix=".route-final-", suffix=".json", delete=False) as handle:
+            staged_path = Path(handle.name)
+            handle.write(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+        check = check_config(staged_path)
+        staged_path.unlink(missing_ok=True)
+        if check["code"] != 0:
+            restore_file(BASE_CONFIG_PATH, previous_base)
+            return {"ok": False, "error": "Config check failed. Route final was not changed.", "check": check, "restart": None, "state": load_state()}
+        write_json(CONFIG_PATH, config)
+        restart = restart_sing_box()
+        if restart["code"] != 0 or service_status() != "active":
+            restore_file(BASE_CONFIG_PATH, previous_base)
+            restore_file(CONFIG_PATH, previous_config)
+            rollback_restart = restart_sing_box()
+            return {
+                "ok": False,
+                "error": "Restart failed. Previous route final was restored.",
+                "check": check,
+                "restart": restart,
+                "rollback": {"restart": rollback_restart, "service": service_status()},
+                "state": load_state(),
+            }
+        return {"ok": True, "final": final, "previous": old_final, "check": check, "restart": restart, "state": load_state()}
+    except Exception:
+        restore_file(BASE_CONFIG_PATH, previous_base)
+        restore_file(CONFIG_PATH, previous_config)
+        raise
+
+
 def get_proxy_state():
     proxy_result = clash_api_request("/proxies/Proxy")
     if not proxy_result["ok"]:
@@ -3798,6 +3847,9 @@ def load_state():
             "singBoxVersion": sing_box_version(),
             "dnsChoices": LOCAL_DNS_CHOICES,
         },
+        # 兜底出口跟随 base.json 的 route.final（默认 Proxy，可切 direct）；在「节点」页可改，
+        # 改动走 /api/route/final 带 staged check + 回滚，不随 /api/save 一起提交。
+        "baseConfig": {"routeFinal": load_json(BASE_CONFIG_PATH, {}).get("route", {}).get("final", "Proxy")},
     }
 
 
@@ -4155,6 +4207,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not level:
                     raise ValueError("level is required")
                 result = set_log_level(level)
+                status = 200 if result["ok"] else 422 if result.get("check", {}).get("code") != 0 else 500
+                self.send_json(result, status)
+                return
+            if parsed.path == "/api/route/final":
+                final = str(payload.get("final", "")).strip()
+                if not final:
+                    raise ValueError("final is required")
+                result = set_route_final(final)
                 status = 200 if result["ok"] else 422 if result.get("check", {}).get("code") != 0 else 500
                 self.send_json(result, status)
                 return
