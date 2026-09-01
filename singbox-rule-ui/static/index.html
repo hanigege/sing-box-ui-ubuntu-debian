@@ -209,6 +209,10 @@
               <option value="bbr">System BBR / TCP</option>
               <option value="brutal">Brutal mux</option>
             </select>
+            <!-- Brutal mux 说明：选中即显示。padding 固定 false（不加随机字节填充），
+                 减少每包开销降低游戏延迟；brutal 生效时 min_streams/max_connections 为死字段，
+                 由 sing-mux 内部短路，无需暴露给用户。 -->
+            <p id="nodeBrutalNote" class="setting-note hidden" data-i18n="nodeBrutalNote">Brutal mux: padding is fixed to false (no random byte padding) to reduce per-packet overhead and gaming latency. When brutal is enabled, min_streams/max_connections are dead fields (short-circuited by sing-mux) and need no configuration.</p>
             <input id="nodeTag" type="text" autocomplete="off" placeholder="tag" />
             <input id="nodeServer" type="text" autocomplete="off" placeholder="server" />
             <input id="nodePort" type="number" min="1" max="65535" placeholder="443" />
@@ -318,6 +322,6 @@
         </section>
       </section>
     </main>
-    <script src="/app.js?v=20260901-routefinal"></script>
+    <script src="/app.js?v=20260901-brutalnote"></script>
   </body>
 </html>

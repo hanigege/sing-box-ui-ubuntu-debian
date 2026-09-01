@@ -243,6 +243,7 @@ const translations = {
     nodeClockNote: "2022-blake3 has a 30-second replay window: if this gateway's clock differs from the server by more than 30s, the node connects but transfers 0 B/s. Make sure an NTP daemon is running on this host (e.g. apt install chrony, or systemctl enable --now systemd-timesyncd).",
     nodeSsFormatNote: "Shadowsocks fill-in: method 2022-blake3-aes-256-gcm needs a 44-char base64 key from `ssservice genkey` (NOT a plain password). For Caddy/WebSocket disguise: plugin=v2ray-plugin, plugin_opts=mode=websocket;tls;host=YOUR_DOMAIN;path=/YOUR_PATH. Both fields are required — leaving plugin empty silently removes the disguise (node breaks).",
     nodeSocksNote: "SOCKS5 local relay: point to a local socks5 entry (sslocal/ss-local/Dante) on 127.0.0.1, e.g. server=127.0.0.1 port=10010. No password/encryption needed. Typical use: shadowsocks + SIP003 plugin in sing-box intermittently stalls (0-13MB/s, downloads cut off); running the official sslocal client locally and routing sing-box through it restores full speed.",
+    nodeBrutalNote: "Brutal mux: padding is fixed to false (no random byte padding per packet) to cut per-packet overhead and lower gaming latency. When brutal is enabled, min_streams/max_connections are dead fields (short-circuited inside sing-mux) and need no configuration.",
     interruptConnections: "Interrupt old connections",
     routeFinal: "Fallback route",
     routeFinalNote: "Fallback route: where traffic that matches no rule goes. Proxy (default) routes it through the current node — all foreign sites open. direct connects directly: all domestic sites work fine, but some foreign domains may fail to load. Takes effect immediately on change (with config check + rollback).",
@@ -579,6 +580,7 @@ const translations = {
     nodeClockNote: "2022-blake3 有 30 秒防重放窗口：本网关与服务端时钟相差超过 30 秒，节点会「能连上但 0 B/s」。请确保本机有 NTP 在跑（如 apt install chrony，或 systemctl enable --now systemd-timesyncd）。",
     nodeSsFormatNote: "Shadowsocks 填写格式：加密方式选 2022-blake3-aes-256-gcm 时，密码必须是 `ssservice genkey -m 2022-blake3-aes-256-gcm` 生成的 44 字符 base64 key（不能填普通字符串密码）。WS 伪装版：插件填 v2ray-plugin，插件参数填 mode=websocket;tls;host=你的域名;path=/你的暗号。这两项必填——插件留空保存会被静默删掉，节点会退回直连而连不上。",
     nodeSocksNote: "SOCKS5 本地中转：填本机 sslocal/ss-local 等程序的 socks5 监听地址和端口（例如 server=127.0.0.1、端口=10010），无需密码/加密。典型用途：sing-box 的 shadowsocks + v2ray-plugin（SIP003）间歇性断流（下载 0-13MB/s 且中途中断）时，本机跑官方 sslocal 客户端、让 sing-box 走它的 socks5 入口，可恢复满速。",
+    nodeBrutalNote: "Brutal mux：padding 固定为 false（不往包里填充随机字节），减少每包开销、降低游戏延迟。brutal 开启时 min_streams/max_connections 是死字段（sing-mux 内部短路），无需配置。",
     interruptConnections: "切换时中断旧连接",
     routeFinal: "兜底出口",
     routeFinalNote: "兜底出口：未匹配任何规则的流量走哪里。默认 Proxy 走当前代理节点，国外网站都能正常打开；选 direct 则未匹配流量直连——国内网站完全不受影响，但部分国外域名可能打不开。改动立即生效（带配置校验和失败回滚）。",
@@ -2496,6 +2498,11 @@ function syncNodeTransportControls() {
   const socksNote = $("nodeSocksNote");
   if (socksNote) {
     socksNote.classList.toggle("hidden", !isSocks);
+  }
+  // Brutal mux 提示：VLESS 且选了 brutal 模式才显示（padding=false 等实现细节）。
+  const brutalNote = $("nodeBrutalNote");
+  if (brutalNote) {
+    brutalNote.classList.toggle("hidden", !(isVless && isBrutal));
   }
 }
 
