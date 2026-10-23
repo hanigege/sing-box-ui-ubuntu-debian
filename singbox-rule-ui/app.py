@@ -50,6 +50,10 @@ ENABLE_GATEWAY_FORWARDING = os.environ.get("SING_BOX_GATEWAY_ENABLE_FORWARDING",
 TPROXY_PORT = int(os.environ.get("RULE_UI_TPROXY_PORT", "9888"))
 TPROXY_MARK = int(os.environ.get("RULE_UI_TPROXY_MARK", "1"))
 TPROXY_TABLE = int(os.environ.get("RULE_UI_TPROXY_TABLE", "100"))
+# sing-box 自身出站连接的 SO_MARK。必须与 nft output 链里放行用的 mark 一致（见
+# render_tproxy_script）：被 tproxy 抓取的流量用 TPROXY_MARK，代理进程自己的出站用
+# ROUTING_MARK，两者不能相同，否则回环防护失效。
+ROUTING_MARK = int(os.environ.get("RULE_UI_ROUTING_MARK", "1024"))
 LISTS = {
     "whitelist": {"title": "White List", "outbound": "direct"},
     "blacklist": {"title": "Black List", "outbound": "block"},
@@ -967,6 +971,21 @@ def preferred_auto_outbounds(tags, groups):
     return tags
 
 
+def apply_routing_mark(outbound):
+    """给真实出站打 SO_MARK，避免 sing-box 自身流量被 tproxy 二次抓取。
+
+    回环机制：output 链把发往 FakeIP 段 / proxy4 段的包打 TPROXY_MARK 并送回 lo，
+    prerouting 再 tproxy 到 9888。若 sing-box 的出站目标恰好落在这些段里（典型：
+    whitelist 有 apple.com → direct，而 proxy4 含 Apple 的 17.57.144.0/22 等网段），
+    出站包会再被抓取、再走 direct，形成无退避的无限回环，直到 fd 耗尽拖死网关。
+    selector/urltest/block 不产生 socket，不能带该字段。
+    """
+    if outbound.get("type") in {"selector", "urltest", "block"}:
+        return outbound
+    outbound["routing_mark"] = ROUTING_MARK
+    return outbound
+
+
 def render_config(nodes=None, groups=None, rule_dir=RULE_DIR, normalized_lists=None):
     ensure_manager_data()
     nodes = normalize_nodes(nodes if nodes is not None else load_nodes())
@@ -1028,9 +1047,12 @@ def render_config(nodes=None, groups=None, rule_dir=RULE_DIR, normalized_lists=N
     # interval > idle_timeout 时官方 NewURLTestGroup 直接返回错误（sing-box 起不来），
     # 而 `sing-box check` 是静态校验抓不到——渲染时就拦住，避免落盘一个起不来的配置。
     validate_urltest_timing(auto["interval"], auto["idle_timeout"])
-    direct = groups.get("direct") or {"type": "direct", "tag": "direct"}
+    direct = apply_routing_mark(dict(groups.get("direct") or {"type": "direct", "tag": "direct"}))
     block = groups.get("block") or {"type": "block", "tag": "block"}
-    config["outbounds"] = [proxy, auto, *[node["outbound"] for node in nodes if node.get("enabled", True)], direct, block]
+    node_outbounds = [
+        apply_routing_mark(dict(node["outbound"])) for node in nodes if node.get("enabled", True)
+    ]
+    config["outbounds"] = [proxy, auto, *node_outbounds, direct, block]
     prune_managed_outbound_references(config, tags)
     return config
 
@@ -2619,6 +2641,9 @@ IFACE={json.dumps(iface)}
 TPROXY_PORT={TPROXY_PORT}
 TPROXY_MARK={TPROXY_MARK}
 TPROXY_TABLE={TPROXY_TABLE}
+# sing-box 自身出站连接带的 SO_MARK（与 app.py 的 ROUTING_MARK / outbound.routing_mark 一致）。
+# output 链靠它放行代理进程自己的包，否则出站目标落在 proxy4/FakeIP 段时会被 tproxy 抓回来形成回环。
+ROUTING_MARK={ROUTING_MARK}
 
 # 运行态只设置 TProxy/FakeIP 必需项；TCP 队列、缓冲和其它性能参数交给 PVE/LXC 管理员手动统一配置。
 sysctl -w net.ipv4.ip_nonlocal_bind=1 >/dev/null 2>&1 || true
@@ -2659,6 +2684,10 @@ table inet singbox_tproxy {{
   chain prerouting {{
     type filter hook prerouting priority mangle; policy accept;
 
+    # 直接连 TPROXY 端口一律拒绝：任何人（含本机进程）把 9888 当代理端口用时，
+    # 会在内核里反复生成"本机连自己"的连接并且永远握手失败，堆积句柄。
+    fib daddr type local meta l4proto {{ tcp, udp }} th dport "${{TPROXY_PORT}}" reject
+
     # 本机访问 FakeIP、灰名单 IP/CIDR 或启用的 Telegram 服务 IP 时先在 output 打标，回 lo 后只处理已标记目标。
     iifname "lo" ip daddr {sets["fakeip4"]} meta l4proto {{ tcp, udp }} meta mark "${{TPROXY_MARK}}" tproxy ip to :"${{TPROXY_PORT}}" accept
     iifname "lo" ip6 daddr {sets["fakeip6"]} meta l4proto {{ tcp, udp }} meta mark "${{TPROXY_MARK}}" tproxy ip6 to :"${{TPROXY_PORT}}" accept
@@ -2677,6 +2706,10 @@ table inet singbox_tproxy {{
 
   chain output {{
     type route hook output priority mangle; policy accept;
+
+    # 第一优先级：sing-box 自己的出站连接（带 SO_MARK=ROUTING_MARK）直接放行，
+    # 绝不能被打上 TPROXY_MARK 送回 lo 二次抓取——那是句柄回环的根源。
+    meta mark "${{ROUTING_MARK}}" accept
 
     # output 只给本机发往 FakeIP、UI 灰名单 IP/CIDR 和启用的 Telegram 服务 IP 打 mark，节点服务器 IP 保持系统原路由。
     ip daddr {sets["fakeip4"]} meta l4proto {{ tcp, udp }} meta mark set "${{TPROXY_MARK}}"
